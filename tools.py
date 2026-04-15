@@ -22,7 +22,7 @@ try:
         get_physical_prompt,
     )
     from rag import get_relevant_context
-    from schemas import ConceptualModel, LogicalModel, PhysicalModelTemplate
+    from schemas import ConceptualModel, LogicalModel, PhysicalModel, PhysicalModelTemplate  #added by swamy
 except ImportError:  # pragma: no cover
     from .config import get_openai_api_key, get_openai_model
     from .prompts import (
@@ -31,7 +31,7 @@ except ImportError:  # pragma: no cover
         get_physical_prompt,
     )
     from .rag import get_relevant_context
-    from .schemas import ConceptualModel, LogicalModel, PhysicalModelTemplate
+    from .schemas import ConceptualModel, LogicalModel, PhysicalModel, PhysicalModelTemplate  #added by swamy
 
   
 
@@ -124,10 +124,6 @@ def _fallback_conceptual_model(requirement: str, context: str) -> Dict[str, Any]
             "Cardinality should be reviewed and approved by the SME.",
             "Entity names should reflect business language, not technical table names.",
         ],
-        "assumptions": [
-            "The requirement text does not yet contain full attribute-level detail.",
-            "This conceptual model is intended for SME validation before logical modeling.",
-        ],
         "conceptual_summary": "This draft identifies the core business entities and high-level relationships for the requested use case.",
         "diagram_description": "ER diagram derived from conceptual business entities and their cardinality.",
     }
@@ -187,6 +183,178 @@ def _fallback_logical_model(conceptual_output: Dict[str, Any]) -> Dict[str, Any]
     }
 
 
+#added by swamy
+def _physical_name(name: str) -> str:
+    name = name.strip()
+    name = re.sub(r"\s+", "_", name)
+    name = re.sub(r"[^a-zA-Z0-9_]", "", name)
+    return name.lower()
+
+
+#added by swamy
+def _map_column_data_type(
+    logical_type: str,
+    is_primary_key: bool = False,
+    is_foreign_key: bool = False,
+) -> str:
+    type_text = (logical_type or "").lower()
+
+    if any(token in type_text for token in ["int", "number"]):
+        return "INTEGER"
+    if any(token in type_text for token in ["decimal", "numeric", "amount", "money"]):
+        return "DECIMAL(18,2)"
+    if "timestamp" in type_text or "datetime" in type_text:
+        return "TIMESTAMP"
+    if "date" in type_text:
+        return "DATE"
+    if "bool" in type_text:
+        return "BOOLEAN"
+    if "text" in type_text:
+        return "TEXT"
+    return "VARCHAR(255)"
+
+
+#added by swamy
+def _build_table_ddl(
+    table: Dict[str, Any],
+    column_lines: List[str],
+    primary_key: List[str],
+    foreign_keys: List[Dict[str, Any]],
+) -> str:
+    constraints = []
+    table_name = table["table_name"]
+
+    if primary_key:
+        constraints.append(
+            f"  CONSTRAINT pk_{table_name} PRIMARY KEY ({', '.join(primary_key)})"
+        )
+
+    for foreign_key in foreign_keys:
+        column = foreign_key["column"]
+        references_table = foreign_key["references_table"]
+        references_column = foreign_key["references_column"]
+        constraints.append(
+            "  "
+            f"CONSTRAINT fk_{table_name}_{column} "
+            f"FOREIGN KEY ({column}) "
+            f"REFERENCES {references_table} ({references_column})"
+        )
+
+    ddl_lines = column_lines + constraints
+    return (
+        f"CREATE TABLE {table_name} (\n"
+        + ",\n".join(ddl_lines)
+        + "\n);"
+    )
+
+
+#added by swamy
+def _fallback_physical_model(logical_output: Dict[str, Any]) -> Dict[str, Any]:
+    tables = logical_output.get("tables", [])
+    table_name_map = {
+        table.get("table_name", ""): _physical_name(table.get("table_name", ""))
+        for table in tables
+    }
+    physical_tables = []
+    all_indexes = []
+    ddl = []
+
+    for table in tables:
+        logical_table_name = table.get("table_name", "")
+        physical_table_name = table_name_map.get(logical_table_name, _physical_name(logical_table_name))
+        primary_key = [_physical_name(column) for column in table.get("primary_key", [])]
+        logical_foreign_keys = table.get("foreign_keys", [])
+        foreign_key_columns = {
+            _physical_name(foreign_key.get("column", ""))
+            for foreign_key in logical_foreign_keys
+        }
+        physical_columns = []
+        column_lines = []
+
+        for column in table.get("columns", []):
+            column_name = _physical_name(column.get("name", ""))
+            is_primary_key = column_name in primary_key
+            is_foreign_key = column_name in foreign_key_columns
+            column_data_type = _map_column_data_type(
+                column.get("type", ""),
+                is_primary_key=is_primary_key,
+                is_foreign_key=is_foreign_key,
+            )
+            nullable = bool(column.get("nullable", True))
+            null_clause = "NULL" if nullable else "NOT NULL"
+            column_lines.append(f"  {column_name} {column_data_type} {null_clause}")
+            physical_columns.append(
+                {
+                    "name": column_name,
+                    "column_data_type": column_data_type,
+                    "nullable": nullable,
+                    "default": None,
+                    "source_logical_column": column.get("name", ""),
+                    "comment": "Mapped from logical model column.",
+                }
+            )
+
+        physical_foreign_keys = []
+        table_indexes = []
+        for foreign_key in logical_foreign_keys:
+            column_name = _physical_name(foreign_key.get("column", ""))
+            references_table = table_name_map.get(
+                foreign_key.get("references_table", ""),
+                _physical_name(foreign_key.get("references_table", "")),
+            )
+            references_column = _physical_name(foreign_key.get("references_column", ""))
+            physical_foreign_keys.append(
+                {
+                    "column": column_name,
+                    "references_table": references_table,
+                    "references_column": references_column,
+                }
+            )
+            index = {
+                "index_name": f"idx_{physical_table_name}_{column_name}",
+                "table_name": physical_table_name,
+                "columns": [column_name],
+                "unique": False,
+            }
+            table_indexes.append(index)
+            all_indexes.append(index)
+
+        physical_table = {
+            "table_name": physical_table_name,
+            "source_logical_table": logical_table_name,
+            "columns": physical_columns,
+            "primary_key": primary_key,
+            "foreign_keys": physical_foreign_keys,
+            "indexes": table_indexes,
+            "partitioning": "",
+            "storage_notes": [
+                "No partitioning is applied because workload and volume details were not provided."
+            ],
+        }
+        physical_tables.append(physical_table)
+        ddl.append(
+            _build_table_ddl(
+                physical_table,
+                column_lines,
+                primary_key,
+                physical_foreign_keys,
+            )
+        )
+
+    for index in all_indexes:
+        ddl.append(
+            f"CREATE INDEX {index['index_name']} "
+            f"ON {index['table_name']} "
+            f"({', '.join(index['columns'])});"
+        )
+
+    return {
+        "tables": physical_tables,
+        "indexes": all_indexes,
+        "ddl": ddl,
+    }
+
+
 def _generate_json(prompt: str, system_message: str) -> Dict[str, Any]:
     client = _build_client()
     if client is None:
@@ -239,7 +407,20 @@ def logical_model_core(conceptual_payload: Dict[str, Any]) -> Dict[str, Any]:
         return _fallback_logical_model(conceptual_payload)
 
 
-
+#added by swamy
+def physical_model_core(logical_payload: Dict[str, Any]) -> Dict[str, Any]:
+    prompt = get_physical_prompt(logical_payload)
+    try:
+        physical = PhysicalModel.model_validate(
+            _generate_json(
+                prompt,
+                "You are a senior physical data modeler specializing in DDL artifact generation.",
+            )
+        )
+        return physical.model_dump()
+    except Exception:
+        fallback = _fallback_physical_model(logical_payload)
+        return PhysicalModel.model_validate(fallback).model_dump()
 
 
 @tool
@@ -267,4 +448,11 @@ def logical_tool(conceptual_json: str) -> str:
     return f"LOGICAL_MODEL_JSON:\n{json.dumps(logical, indent=2)}"
     
 
-
+#added by swamy
+@tool
+def physical_tool(logical_json: str) -> str:
+    """Generate the physical model JSON and DDL from the logical model JSON."""
+    logger.info("TOOL CALLED: physical_tool")
+    logical_payload = extract_json_from_tool_output(logical_json)
+    physical = physical_model_core(logical_payload)
+    return f"PHYSICAL_MODEL_JSON:\n{json.dumps(physical, indent=2)}"

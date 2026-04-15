@@ -27,7 +27,6 @@ class ConceptualModel(BaseModel):
     entities: List[EntityDefinition]
     relationships: List[RelationshipDefinition]
     business_rules: List[str] = Field(default_factory=list)
-    assumptions: List[str] = Field(default_factory=list)
     conceptual_summary: str = ""
     diagram_description: str = ""
     er_diagram_mermaid: str = ""
@@ -68,6 +67,37 @@ class PhysicalModelTemplate(BaseModel):
     logical_tables_received: int
 
 
+#added by swamy
+class PhysicalColumn(BaseModel):
+    name: str
+    column_data_type: str
+    nullable: bool
+
+
+#added by swamy
+class PhysicalIndex(BaseModel):
+    index_name: str
+    table_name: str
+    columns: List[str]
+    unique: bool = False
+
+
+#added by swamy
+class PhysicalTable(BaseModel):
+    table_name: str
+    columns: List[PhysicalColumn]
+    primary_key: List[str]
+    foreign_keys: List[ForeignKeyDefinition] = Field(default_factory=list)
+    indexes: List[PhysicalIndex] = Field(default_factory=list)
+
+
+#added by swamy
+class PhysicalModel(BaseModel):
+    tables: List[PhysicalTable]
+    indexes: List[PhysicalIndex] = Field(default_factory=list)
+    ddl: List[str] = Field(default_factory=list)
+
+
 class ConceptualRequest(BaseModel):
     requirement: str = Field(..., description="Business requirement or use case from the user.")
 
@@ -94,7 +124,7 @@ class OrchestratorResponse(BaseModel):
     requirement: str
     conceptual_output: Optional[ConceptualModel] = None
     logical_output: Optional[LogicalModel] = None
-    physical_output: Optional[PhysicalModelTemplate] = None
+    physical_output: Optional[PhysicalModel] = None  #added by swamy
     agent_final_answer: str = ""
     conceptual_artifact_id: Optional[str] = None
     conceptual_view_url: Optional[str] = None

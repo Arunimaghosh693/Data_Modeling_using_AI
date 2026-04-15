@@ -5,18 +5,18 @@ try:
     from langgraph.prebuilt import create_react_agent
 
     from config import get_openai_model
-    from tools import conceptual_tool, logical_tool, rag_tool
+    from tools import conceptual_tool, logical_tool, physical_tool, rag_tool  #added by swamy
 except ImportError:  # pragma: no cover
     from langchain_openai import ChatOpenAI
     from langgraph.prebuilt import create_react_agent
 
     from .config import get_openai_model
-    from .tools import conceptual_tool, logical_tool, rag_tool
+    from .tools import conceptual_tool, logical_tool, physical_tool, rag_tool  #added by swamy
 
 
 llm = ChatOpenAI(model=get_openai_model())
 
-tools = [rag_tool, conceptual_tool, logical_tool]
+tools = [rag_tool, conceptual_tool, logical_tool, physical_tool]  #added by swamy
 
 system_prompt = """
 You are a banking domain expert and enterprise data modeling agent.
