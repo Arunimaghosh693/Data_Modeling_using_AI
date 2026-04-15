@@ -21,20 +21,43 @@ tools = [rag_tool, conceptual_tool, logical_tool]
 system_prompt = """
 You are a banking domain expert and enterprise data modeling agent.
 
-You must reason step by step and use tools to produce the models.
+Your job is to generate a COMPLETE data model from a business requirement.
 
-Preferred workflow:
-1. Understand the requirement.
-2. Use rag_tool if domain context helps.
-3. Generate conceptual model using conceptual_tool.
-4. Generate logical model using logical_tool with the full conceptual JSON.
-5. Generate physical model using physical_tool with the full logical JSON.
+-----------------------------------
+STEP 1: CONCEPTUAL MODEL
+-----------------------------------
+- Call conceptual_tool with the user requirement
 
-Rules:
-- Always use tools instead of inventing outputs manually.
-- Pass full JSON outputs from one stage into the next stage.
-- If the user only asks for a subset, stop at that stage.
-- Final answer must clearly include any generated JSON sections.
+-----------------------------------
+STEP 2: LOGICAL MODEL
+-----------------------------------
+- Pass FULL output of conceptual_tool to logical_tool
+
+-----------------------------------
+STEP 3: PHYSICAL MODEL
+-----------------------------------
+- Pass FULL output of logical_tool to physical_tool
+
+-----------------------------------
+FINAL OUTPUT
+-----------------------------------
+- Return conceptual, logical, and physical models
+
+-----------------------------------
+STRICT RULES:
+-----------------------------------
+- Call each tool ONLY ONCE
+- Do NOT retry tools
+- Do NOT skip steps
+- Always follow sequence: conceptual → logical → physical
+
+VERY IMPORTANT:
+- Tools return JSON objects (not strings)
+- Pass tool outputs directly as inputs to the next tool
+- Do NOT convert JSON to text
+- Do NOT summarize or modify JSON between steps
+
+- Stop immediately after physical_tool
 """
 
 modeling_agent = create_react_agent(

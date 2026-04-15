@@ -194,7 +194,7 @@ def _generate_json(prompt: str, system_message: str) -> Dict[str, Any]:
             {"role": "user", "content": prompt},
         ],
     )
-    return _extract_json(response.output_text)
+    return json.loads(response.output_text)
 
 
 def rag_context_core(requirement: str, k: int = 3) -> str:
@@ -240,21 +240,20 @@ def logical_model_core(conceptual_payload: Dict[str, Any]) -> Dict[str, Any]:
 @tool
 def rag_tool(requirement: str) -> str:
     """Retrieve relevant business context for the requirement using RAG."""
-    return rag_context_core(requirement)
+    content =  rag_context_core(requirement)
+    return {"context":content}
 
 
 @tool
-def conceptual_tool(requirement: str) -> str:
+def conceptual_tool(requirement: str) -> dict:
     """Generate the conceptual model JSON from the business requirement."""
     conceptual = conceptual_model_core(requirement)
-    return f"CONCEPTUAL_MODEL_JSON:\n{json.dumps(conceptual, indent=2)}"
+    #return f"CONCEPTUAL_MODEL_JSON:\n{json.dumps(conceptual, indent=2)}"
+    return conceptual
 
 
 @tool
-def logical_tool(conceptual_json: str) -> str:
+def logical_tool(conceptual_output: dict) -> dict:
     """Generate the logical model JSON from the conceptual model JSON."""
-    conceptual_payload = extract_json_from_tool_output(conceptual_json)
-    logical = logical_model_core(conceptual_payload)
-    return f"LOGICAL_MODEL_JSON:\n{json.dumps(logical, indent=2)}"
-
+    return logical_model_core(conceptual_output)
 

@@ -115,8 +115,10 @@ def healthcheck() -> dict[str, str]:
 
 @app.post("/orchestrate", response_model=OrchestratorResponse)
 def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> OrchestratorResponse:
-    result = DataModelingOrchestrator().run(payload.requirement)
 
+    #clean_requirement = payload.requirement.replace("\n", " ")
+    result = DataModelingOrchestrator().run(payload.requirement)
+   
     conceptual_output = result.get("conceptual_output")
     artifact_id = None
     links = {
