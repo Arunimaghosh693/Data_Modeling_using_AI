@@ -2,33 +2,46 @@ import re
 
 
 def clean_name(name: str) -> str:
-    # Replace spaces + remove special characters
+    if not name:
+        return "UNKNOWN"
+
     name = name.strip()
     name = re.sub(r"\s+", "_", name)
     name = re.sub(r"[^a-zA-Z0-9_]", "", name)
-    return name
+
+    return name or "UNKNOWN"
 
 
 def normalize_entity(name: str) -> str:
     return clean_name(name).upper()
 
 
+
 def get_connector(cardinality: str) -> str:
-    if cardinality == "1:N":
+    if not cardinality:
         return "||--o{"
-    elif cardinality == "N:1":
+
+    cardinality = cardinality.replace(" ", "").upper()
+
+    if cardinality in ["1:N", "1-M", "ONE_TO_MANY"]:
+        return "||--o{"
+    elif cardinality in ["N:1", "M-1", "MANY_TO_ONE"]:
         return "}o--||"
-    elif cardinality == "1:1":
+    elif cardinality in ["1:1", "ONE_TO_ONE"]:
         return "||--||"
-    else:
-        return "--"
+    elif cardinality in ["M:N", "N:N", "M-M", "MANY_TO_MANY"]:
+        return "}o--o{"
+
+
+    return "||--o{"
 
 
 def get_label(rel) -> str:
     if getattr(rel, "label", None):
         return clean_name(rel.label).lower()
 
-    desc = rel.description.lower()
+    desc = getattr(rel, "description", "") or ""
+    desc = desc.lower()
 
     if "own" in desc:
         return "owns"
@@ -37,14 +50,14 @@ def get_label(rel) -> str:
     if "account" in desc:
         return "has"
 
-    # fallback
-    return rel.to_entity.lower()
+
+    return clean_name(rel.to_entity).lower()
 
 
 def build_mermaid(conceptual_model):
     lines = ["erDiagram"]
 
-    # ✅ Entities
+    
     for entity in conceptual_model.entities:
         entity_name = normalize_entity(entity.name)
         lines.append(f"  {entity_name} {{")
@@ -55,12 +68,12 @@ def build_mermaid(conceptual_model):
 
         lines.append("  }")
 
-    # ✅ Relationships
+    
     for rel in conceptual_model.relationships:
         from_entity = normalize_entity(rel.from_entity)
         to_entity = normalize_entity(rel.to_entity)
 
-        connector = get_connector(rel.cardinality)
+        connector = get_connector(getattr(rel, "cardinality", ""))
         label = get_label(rel)
 
         lines.append(
