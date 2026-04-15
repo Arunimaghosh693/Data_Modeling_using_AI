@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import re
 from typing import Any, Dict, List
@@ -8,7 +11,7 @@ from langchain_core.tools import tool
 
 try:
     from openai import OpenAI
-except ImportError:  # pragma: no cover
+except ImportError:  
     OpenAI = None
 
 try:
@@ -29,6 +32,8 @@ except ImportError:  # pragma: no cover
     )
     from .rag import get_relevant_context
     from .schemas import ConceptualModel, LogicalModel, PhysicalModelTemplate
+
+  
 
 
 def _build_client():
@@ -194,7 +199,7 @@ def _generate_json(prompt: str, system_message: str) -> Dict[str, Any]:
             {"role": "user", "content": prompt},
         ],
     )
-    return json.loads(response.output_text)
+    return _extract_json(response.output_text)
 
 
 def rag_context_core(requirement: str, k: int = 3) -> str:
@@ -240,20 +245,26 @@ def logical_model_core(conceptual_payload: Dict[str, Any]) -> Dict[str, Any]:
 @tool
 def rag_tool(requirement: str) -> str:
     """Retrieve relevant business context for the requirement using RAG."""
-    content =  rag_context_core(requirement)
-    return {"context":content}
+    return rag_context_core(requirement)
 
 
 @tool
-def conceptual_tool(requirement: str) -> dict:
+def conceptual_tool(requirement: str) -> str:
     """Generate the conceptual model JSON from the business requirement."""
+    logger.info("TOOL CALLED: conceptual_tool")
     conceptual = conceptual_model_core(requirement)
-    #return f"CONCEPTUAL_MODEL_JSON:\n{json.dumps(conceptual, indent=2)}"
-    return conceptual
-
+    #return conceptual
+    return f"CONCEPTUAL_MODEL_JSON:\n{json.dumps(conceptual, indent=2)}"
+    
 
 @tool
-def logical_tool(conceptual_output: dict) -> dict:
+def logical_tool(conceptual_json: str) -> str:
     """Generate the logical model JSON from the conceptual model JSON."""
-    return logical_model_core(conceptual_output)
+    logger.info("TOOL CALLED: logical_tool")
+    conceptual_payload = extract_json_from_tool_output(conceptual_json)
+    logical = logical_model_core(conceptual_payload)
+    #return logical
+    return f"LOGICAL_MODEL_JSON:\n{json.dumps(logical, indent=2)}"
+    
+
 

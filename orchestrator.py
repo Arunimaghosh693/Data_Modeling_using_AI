@@ -1,4 +1,6 @@
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import json
 from dataclasses import dataclass
@@ -12,6 +14,7 @@ except ImportError:  # pragma: no cover
     from .tools import extract_json_from_tool_output
 
 
+
 @dataclass
 class DataModelingOrchestrator:
     name: str = "data_modeling_orchestrator"
@@ -20,6 +23,9 @@ class DataModelingOrchestrator:
         result = modeling_agent.invoke(
             {"messages": [("user", user_query)]}
         )
+         
+        logger.info("Agent finished execution")
+
 
         conceptual_output = None
         logical_output = None
@@ -39,9 +45,9 @@ class DataModelingOrchestrator:
                 content = str(content)
 
             if name == "conceptual_tool" and conceptual_output is None:
-                conceptual_output = content
+                conceptual_output = extract_json_from_tool_output(content)
             elif name == "logical_tool" and logical_output is None:
-                logical_output = content
+                logical_output = extract_json_from_tool_output(content)
             elif name == "physical_tool" and physical_output is None:
                 physical_output = extract_json_from_tool_output(content)
 

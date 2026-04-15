@@ -94,22 +94,124 @@ Example JSON structure:
 
 def get_logical_prompt(conceptual_output: Dict[str, Any]) -> str:
     conceptual_json = json.dumps(conceptual_output, indent=2)
-    return f"""
-You are a data modeler converting an approved conceptual model into a logical model.
 
-Approved conceptual model:
+    return f"""
+You are a banking domain expert and enterprise data architect.
+
+You are given an APPROVED conceptual ER model for a Credit Risk system.  
+Your task is to transform it into a LOGICAL data model.
+
+-----------------------------------
+CONTEXT
+-----------------------------------
+- Domain: Banking (Credit Risk)
+- Scope: End-to-end credit lifecycle
+  (Origination → Assessment → Monitoring → Default → Recovery)
+
+-----------------------------------
+OBJECTIVE
+-----------------------------------
+Convert the conceptual model into a structured logical data model.
+
+-----------------------------------
+STRICT RULES
+-----------------------------------
+- Stay strictly at the LOGICAL level.
+- Do NOT generate physical DDL (no SQL, no storage details).
+- Do NOT include performance or indexing considerations.
+- Do NOT classify tables as fact/dimension.
+- Do NOT include financial calculations (PD, LGD, EAD, IFRS-9, Basel).
+- Use ONLY the provided conceptual model (no hallucination).
+
+-----------------------------------
+WHAT YOU MUST DO
+-----------------------------------
+1. Convert conceptual entities into logical tables.
+2. Define columns for each table (business-relevant attributes).
+3. Identify PRIMARY KEYS for each table.
+4. Define FOREIGN KEY relationships between tables.
+5. Resolve MANY-TO-MANY relationships using associative tables.
+6. Maintain all relationships from the conceptual model.
+7. Implement all the relationships properly mentioned in the conceptual model. 
+7. Apply basic normalization (avoid redundancy, logical grouping).
+8. Include audit-style attributes where appropriate (e.g., status, effective dates).
+
+-----------------------------------
+IMPORTANT CONSTRAINTS
+-----------------------------------
+- Column types should be GENERIC (e.g., string, number, date).
+- Do NOT use database-specific types.
+- Preserve business meaning from conceptual model.
+
+-----------------------------------
+PRIMARY KEY & FOREIGN KEY CONSTRAINTS
+-----------------------------------
+
+PRIMARY KEY RULES:
+
+- Every table MUST have a primary key.
+
+- Primary key must uniquely identify each record.
+
+- Primary key columns must NOT be nullable.
+
+- Use surrogate keys for all main entities:
+  → Format: <Entity_Name>_ID
+  → Examples: Customer_ID, Account_ID, Transaction_ID
+
+- Do NOT use business attributes (e.g., Name, Email, Phone) as primary keys.
+
+- Primary keys must be stable and should not change over time.
+
+- Ensure consistent naming convention across all tables.
+
+- For associative (bridge) tables:
+  → Use composite primary key consisting of foreign keys
+  → Example: (Facility_ID, Collateral_ID)
+
+-----------------------------------
+
+FOREIGN KEY RULES:
+
+- Every structural relationship between entities MUST be implemented using foreign keys.
+
+- For every 1:N relationship:
+  → Add a foreign key in the child table referencing the parent table’s primary key.
+
+- For every 1:1 relationship:
+  → Add a foreign key in the dependent entity
+  → OR use shared primary key if entities are tightly coupled.
+
+- For every M:N relationship:
+  → Create an associative (bridge) table
+  → Add foreign keys referencing both parent tables
+  → Use these foreign keys as composite primary key
+
+- Foreign key columns must match the referenced primary key in meaning and type (logical level).
+
+- Tables may not contain foreign keys if they represent root or independent entities.
+
+-----------------------------------
+
+CONSISTENCY VALIDATION (VERY IMPORTANT)
+
+Before returning the final JSON:
+- Ensure every table has a valid primary key.
+- Ensure every relationship is implemented using foreign keys or associative tables.
+- Ensure no relationship from the conceptual model is missing in logical design.
+- Ensure naming consistency between PK and FK (e.g., Customer_ID matches Customer table).
+
+-----------------------------------
+INPUT (APPROVED CONCEPTUAL MODEL)
+-----------------------------------
 {conceptual_json}
 
-Return ONLY valid JSON.
+-----------------------------------
+OUTPUT REQUIREMENTS
+-----------------------------------
+Return ONLY valid JSON (no explanation).
 
-Rules:
-- Convert entities into logical tables.
-- Define primary keys and foreign keys.
-- Include logical column types at a generic level.
-- Mention normalization guidance.
-- Preserve the approved business relationships from the conceptual model.
-
-JSON structure:
+Example JSON structure:
 {{
   "source_entities": ["string"],
   "tables": [

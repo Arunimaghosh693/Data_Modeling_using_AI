@@ -1,4 +1,12 @@
 from __future__ import annotations
+import logging
+
+logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+
 
 try:
     import json
@@ -20,7 +28,7 @@ except ImportError:  # pragma: no cover - supports package-style imports
     from .orchestrator import DataModelingOrchestrator
     from .schemas import ConceptualModel, ModelingRequest, OrchestratorResponse
     from .utils.mermaid_builder import build_mermaid
-
+    
 
 app = FastAPI(
     title="Agentic Data Modeling Workflow",
@@ -115,10 +123,9 @@ def healthcheck() -> dict[str, str]:
 
 @app.post("/orchestrate", response_model=OrchestratorResponse)
 def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> OrchestratorResponse:
-
-    #clean_requirement = payload.requirement.replace("\n", " ")
+    logging.info("/orchestrate endpoint called")
     result = DataModelingOrchestrator().run(payload.requirement)
-   
+
     conceptual_output = result.get("conceptual_output")
     artifact_id = None
     links = {
