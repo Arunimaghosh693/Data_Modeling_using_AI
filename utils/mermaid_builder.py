@@ -16,6 +16,32 @@ def normalize_entity(name: str) -> str:
     return clean_name(name).upper()
 
 
+def normalize_data_type(data_type: str, default_type: str = "string") -> str:
+    cleaned_type = clean_name(data_type)
+    if not cleaned_type:
+        return default_type
+    return cleaned_type.lower()
+
+
+def format_key_flags(is_primary_key: bool, is_foreign_key: bool) -> str:
+    if is_primary_key and is_foreign_key:
+        return " PK,FK"
+    if is_primary_key:
+        return " PK"
+    if is_foreign_key:
+        return " FK"
+    return ""
+
+
+def build_relationship_connector(primary_key: list[str], foreign_key_column: str) -> str:
+    normalized_primary_keys = {clean_name(column).lower() for column in primary_key}
+    normalized_foreign_key = clean_name(foreign_key_column).lower()
+
+    if normalized_primary_keys == {normalized_foreign_key}:
+        return "||--||"
+
+    return "||--o{"
+
 
 def get_connector(cardinality: str) -> str:
     if not cardinality:
@@ -79,5 +105,77 @@ def build_mermaid(conceptual_model):
         lines.append(
             f"  {from_entity} {connector} {to_entity} : {label}"
         )
+
+    return "\n".join(lines)
+
+
+def build_logical_mermaid(logical_model):
+    lines = ["erDiagram"]
+
+    for table in logical_model.tables:
+        table_name = normalize_entity(table.table_name)
+        primary_keys = {clean_name(column).lower() for column in table.primary_key}
+        foreign_keys = {
+            clean_name(foreign_key.column).lower()
+            for foreign_key in table.foreign_keys
+        }
+
+        lines.append(f"  {table_name} {{")
+        for column in table.columns:
+            column_name = clean_name(column.name).lower()
+            column_type = normalize_data_type(column.type)
+            key_flags = format_key_flags(
+                column_name in primary_keys,
+                column_name in foreign_keys,
+            )
+            lines.append(f"    {column_type} {column_name}{key_flags}")
+        lines.append("  }")
+
+    for table in logical_model.tables:
+        child_table = normalize_entity(table.table_name)
+        for foreign_key in table.foreign_keys:
+            parent_table = normalize_entity(foreign_key.references_table)
+            connector = build_relationship_connector(
+                table.primary_key,
+                foreign_key.column,
+            )
+            label = clean_name(foreign_key.column).lower()
+            lines.append(f"  {parent_table} {connector} {child_table} : {label}")
+
+    return "\n".join(lines)
+
+
+def build_physical_mermaid(physical_model):
+    lines = ["erDiagram"]
+
+    for table in physical_model.tables:
+        table_name = normalize_entity(table.table_name)
+        primary_keys = {clean_name(column).lower() for column in table.primary_key}
+        foreign_keys = {
+            clean_name(foreign_key.column).lower()
+            for foreign_key in table.foreign_keys
+        }
+
+        lines.append(f"  {table_name} {{")
+        for column in table.columns:
+            column_name = clean_name(column.name).lower()
+            column_type = normalize_data_type(column.column_data_type)
+            key_flags = format_key_flags(
+                column_name in primary_keys,
+                column_name in foreign_keys,
+            )
+            lines.append(f"    {column_type} {column_name}{key_flags}")
+        lines.append("  }")
+
+    for table in physical_model.tables:
+        child_table = normalize_entity(table.table_name)
+        for foreign_key in table.foreign_keys:
+            parent_table = normalize_entity(foreign_key.references_table)
+            connector = build_relationship_connector(
+                table.primary_key,
+                foreign_key.column,
+            )
+            label = clean_name(foreign_key.column).lower()
+            lines.append(f"  {parent_table} {connector} {child_table} : {label}")
 
     return "\n".join(lines)
