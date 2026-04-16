@@ -1,7 +1,6 @@
 import json
 from typing import Any, Dict
 
-
 def get_conceptual_prompt(requirement: str, context: str) -> str:
     return f"""
 You are a banking domain expert and enterprise data architect. A business requirement for a 
@@ -35,7 +34,7 @@ Scope:
 - End-to-End Credit Risk lifecyle 
 - From customer onboarding and loan orginiation
 - Through credit assesment and ongoinh monitoring
-- To default and recovery 
+- To default and recovery
 - Applicable to both Retail and Corperate banking 
 
 What you need to do:
@@ -60,6 +59,7 @@ What you need to do:
  
   Important Rules:
   - Entity names must be business nouns (e.g., Customer, Facility, Account)
+  - Prefer domain-specific entity names like Loan_Default and Loan_Recovery instead of generic names like Default and Recovery
   - Definitions must be non-technical and easy to understand 
   - Relationships must be described in business language 
   - Do NOT incliude any implementation or database terminology
@@ -105,7 +105,7 @@ CONTEXT
 -----------------------------------
 - Domain: Banking (Credit Risk)
 - Scope: End-to-end credit lifecycle
-  (Origination → Assessment → Monitoring → Default → Recovery)
+(Origination → Assessment → Monitoring → Default → Recovery) 109
 
 -----------------------------------
 OBJECTIVE
@@ -290,18 +290,14 @@ Return ONLY valid JSON (no explanation).
 
 Example JSON structure:
 {{
-  "tables": [
+ "tables": [
     {{
       "table_name": "string",
-      "source_logical_table": "string",
       "columns": [
         {{
           "name": "string",
           "column_data_type": "string",
-          "nullable": false,
-          "default": "string or null",
-          "source_logical_column": "string",
-          "comment": "string"
+          "nullable": false
         }}
       ],
       "primary_key": ["string"],
@@ -319,9 +315,7 @@ Example JSON structure:
           "columns": ["string"],
           "unique": false
         }}
-      ],
-      "partitioning": "string",
-      "storage_notes": ["string"]
+      ]
     }}
   ],
   "indexes": [

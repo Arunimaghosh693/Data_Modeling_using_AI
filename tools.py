@@ -456,3 +456,5 @@ def physical_tool(logical_json: str) -> str:
     logical_payload = extract_json_from_tool_output(logical_json)
     physical = physical_model_core(logical_payload)
     return f"PHYSICAL_MODEL_JSON:\n{json.dumps(physical, indent=2)}"
+
+

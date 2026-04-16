@@ -14,20 +14,34 @@ try:
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import HTMLResponse, PlainTextResponse
 
-    from artifact_store import get_conceptual_artifact, save_conceptual_artifact
+    from artifact_store import (
+        get_conceptual_artifact,
+        get_logical_artifact,
+        get_physical_artifact,
+        save_conceptual_artifact,
+        save_logical_artifact,
+        save_physical_artifact,
+    )
     from orchestrator import DataModelingOrchestrator
-    from schemas import ConceptualModel, ModelingRequest, OrchestratorResponse
-    from utils.mermaid_builder import build_mermaid
+    from schemas import ConceptualModel, LogicalModel, ModelingRequest, OrchestratorResponse, PhysicalModel
+    from utils.mermaid_builder import build_logical_mermaid, build_mermaid, build_physical_mermaid
 except ImportError:  # pragma: no cover - supports package-style imports
     import json
 
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import HTMLResponse, PlainTextResponse
 
-    from .artifact_store import get_conceptual_artifact, save_conceptual_artifact
+    from .artifact_store import (
+        get_conceptual_artifact,
+        get_logical_artifact,
+        get_physical_artifact,
+        save_conceptual_artifact,
+        save_logical_artifact,
+        save_physical_artifact,
+    )
     from .orchestrator import DataModelingOrchestrator
-    from .schemas import ConceptualModel, ModelingRequest, OrchestratorResponse
-    from .utils.mermaid_builder import build_mermaid
+    from .schemas import ConceptualModel, LogicalModel, ModelingRequest, OrchestratorResponse, PhysicalModel
+    from .utils.mermaid_builder import build_logical_mermaid, build_mermaid, build_physical_mermaid
     
 
 app = FastAPI(
@@ -45,17 +59,27 @@ def _apply_generated_mermaid(conceptual: ConceptualModel) -> ConceptualModel:
     return conceptual.model_copy(update={"er_diagram_mermaid": generated_mermaid})
 
 
-def _build_artifact_links(request: Request, artifact_id: str) -> dict[str, str]:
+def _apply_generated_logical_mermaid(logical: LogicalModel) -> LogicalModel:
+    generated_mermaid = build_logical_mermaid(logical)
+    return logical.model_copy(update={"er_diagram_mermaid": generated_mermaid})
+
+
+def _apply_generated_physical_mermaid(physical: PhysicalModel) -> PhysicalModel:
+    generated_mermaid = build_physical_mermaid(physical)
+    return physical.model_copy(update={"er_diagram_mermaid": generated_mermaid})
+
+
+def _build_artifact_links(request: Request, stage: str, artifact_id: str) -> dict[str, str]:
     base_url = str(request.base_url).rstrip("/")
     return {
-        "view_url": f"{base_url}/conceptual/view/{artifact_id}",
-        "download_mermaid_url": f"{base_url}/conceptual/download/mermaid/{artifact_id}",
-        "download_json_url": f"{base_url}/conceptual/download/json/{artifact_id}",
+        "view_url": f"{base_url}/{stage}/view/{artifact_id}",
+        "download_mermaid_url": f"{base_url}/{stage}/download/mermaid/{artifact_id}",
+        "download_json_url": f"{base_url}/{stage}/download/json/{artifact_id}",
     }
 
 
-def _build_mermaid_html(conceptual: ConceptualModel, mermaid_text: str) -> str:
-    conceptual_json = json.dumps(conceptual.model_dump(), indent=2)
+def _build_mermaid_html(title: str, payload: dict[str, object], json_filename: str, mermaid_text: str) -> str:
+    payload_json = json.dumps(payload, indent=2)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -77,22 +101,22 @@ def _build_mermaid_html(conceptual: ConceptualModel, mermaid_text: str) -> str:
 </head>
 <body>
   <div class="wrap">
-    <h1>Conceptual ER Diagram</h1>
+    <h1>{title}</h1>
     <div class="toolbar">
       <button onclick="downloadMermaid()">Download .mmd</button>
-      <button onclick="downloadJson()">Download conceptual.json</button>
+      <button onclick="downloadJson()">Download JSON</button>
     </div>
     <div class="mermaid">
 {mermaid_text}
     </div>
     <div class="section"><h2>Mermaid Source</h2><pre id="source"></pre></div>
-    <div class="section"><h2>Conceptual JSON</h2><pre id="conceptual-json"></pre></div>
+    <div class="section"><h2>Model JSON</h2><pre id="model-json"></pre></div>
   </div>
   <script>
     const mermaidText = {mermaid_text!r};
-    const conceptualJson = {conceptual_json!r};
+    const modelJson = {payload_json!r};
     document.getElementById("source").textContent = mermaidText;
-    document.getElementById("conceptual-json").textContent = conceptualJson;
+    document.getElementById("model-json").textContent = modelJson;
     function downloadMermaid() {{
       const blob = new Blob([mermaidText], {{ type: "text/plain;charset=utf-8" }});
       const url = URL.createObjectURL(blob);
@@ -103,11 +127,11 @@ def _build_mermaid_html(conceptual: ConceptualModel, mermaid_text: str) -> str:
       URL.revokeObjectURL(url);
     }}
     function downloadJson() {{
-      const blob = new Blob([conceptualJson], {{ type: "application/json;charset=utf-8" }});
+      const blob = new Blob([modelJson], {{ type: "application/json;charset=utf-8" }});
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "conceptual_model.json";
+      link.download = {json_filename!r};
       link.click();
       URL.revokeObjectURL(url);
     }}
@@ -127,8 +151,20 @@ def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> Orchestr
     result = DataModelingOrchestrator().run(payload.requirement)
 
     conceptual_output = result.get("conceptual_output")
-    artifact_id = None
-    links = {
+    conceptual_artifact_id = None
+    conceptual_links = {
+        "view_url": None,
+        "download_mermaid_url": None,
+        "download_json_url": None,
+    }
+    logical_artifact_id = None
+    logical_links = {
+        "view_url": None,
+        "download_mermaid_url": None,
+        "download_json_url": None,
+    }
+    physical_artifact_id = None
+    physical_links = {
         "view_url": None,
         "download_mermaid_url": None,
         "download_json_url": None,
@@ -136,9 +172,23 @@ def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> Orchestr
 
     if conceptual_output:
         conceptual = _apply_generated_mermaid(ConceptualModel.model_validate(conceptual_output))
-        artifact_id = save_conceptual_artifact(conceptual)
-        links = _build_artifact_links(request, artifact_id)
+        conceptual_artifact_id = save_conceptual_artifact(conceptual)
+        conceptual_links = _build_artifact_links(request, "conceptual", conceptual_artifact_id)
         result["conceptual_output"] = conceptual.model_dump()
+
+    logical_output = result.get("logical_output")
+    if logical_output:
+        logical = _apply_generated_logical_mermaid(LogicalModel.model_validate(logical_output))
+        logical_artifact_id = save_logical_artifact(logical)
+        logical_links = _build_artifact_links(request, "logical", logical_artifact_id)
+        result["logical_output"] = logical.model_dump()
+
+    physical_output = result.get("physical_output")
+    if physical_output:
+        physical = _apply_generated_physical_mermaid(PhysicalModel.model_validate(physical_output))
+        physical_artifact_id = save_physical_artifact(physical)
+        physical_links = _build_artifact_links(request, "physical", physical_artifact_id)
+        result["physical_output"] = physical.model_dump()
 
     return OrchestratorResponse(
         requirement=payload.requirement,
@@ -146,10 +196,18 @@ def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> Orchestr
         logical_output=result.get("logical_output"),
         physical_output=result.get("physical_output"),
         agent_final_answer=result.get("agent_final_answer", ""),
-        conceptual_artifact_id=artifact_id,
-        conceptual_view_url=links["view_url"],
-        conceptual_download_mermaid_url=links["download_mermaid_url"],
-        conceptual_download_json_url=links["download_json_url"],
+        conceptual_artifact_id=conceptual_artifact_id,
+        conceptual_view_url=conceptual_links["view_url"],
+        conceptual_download_mermaid_url=conceptual_links["download_mermaid_url"],
+        conceptual_download_json_url=conceptual_links["download_json_url"],
+        logical_artifact_id=logical_artifact_id,
+        logical_view_url=logical_links["view_url"],
+        logical_download_mermaid_url=logical_links["download_mermaid_url"],
+        logical_download_json_url=logical_links["download_json_url"],
+        physical_artifact_id=physical_artifact_id,
+        physical_view_url=physical_links["view_url"],
+        physical_download_mermaid_url=physical_links["download_mermaid_url"],
+        physical_download_json_url=physical_links["download_json_url"],
     )
 
 
@@ -158,7 +216,14 @@ def conceptual_view(artifact_id: str) -> HTMLResponse:
     conceptual = get_conceptual_artifact(artifact_id)
     if conceptual is None:
         raise HTTPException(status_code=404, detail="Conceptual artifact not found.")
-    return HTMLResponse(content=_build_mermaid_html(conceptual, conceptual.er_diagram_mermaid))
+    return HTMLResponse(
+        content=_build_mermaid_html(
+            "Conceptual ER Diagram",
+            conceptual.model_dump(),
+            "conceptual_model.json",
+            conceptual.er_diagram_mermaid,
+        )
+    )
 
 
 @app.get("/conceptual/download/mermaid/{artifact_id}")
@@ -182,4 +247,82 @@ def download_conceptual_json_artifact(artifact_id: str) -> PlainTextResponse:
         content=json.dumps(conceptual.model_dump(), indent=2),
         media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="conceptual_model.json"'},
+    )
+
+
+@app.get("/logical/view/{artifact_id}", response_class=HTMLResponse)
+def logical_view(artifact_id: str) -> HTMLResponse:
+    logical = get_logical_artifact(artifact_id)
+    if logical is None:
+        raise HTTPException(status_code=404, detail="Logical artifact not found.")
+    return HTMLResponse(
+        content=_build_mermaid_html(
+            "Logical ER Diagram",
+            logical.model_dump(),
+            "logical_model.json",
+            logical.er_diagram_mermaid,
+        )
+    )
+
+
+@app.get("/logical/download/mermaid/{artifact_id}")
+def download_logical_mermaid_artifact(artifact_id: str) -> PlainTextResponse:
+    logical = get_logical_artifact(artifact_id)
+    if logical is None:
+        raise HTTPException(status_code=404, detail="Logical artifact not found.")
+    return PlainTextResponse(
+        content=logical.er_diagram_mermaid,
+        media_type="text/plain",
+        headers={"Content-Disposition": 'attachment; filename="logical_er_diagram.mmd"'},
+    )
+
+
+@app.get("/logical/download/json/{artifact_id}")
+def download_logical_json_artifact(artifact_id: str) -> PlainTextResponse:
+    logical = get_logical_artifact(artifact_id)
+    if logical is None:
+        raise HTTPException(status_code=404, detail="Logical artifact not found.")
+    return PlainTextResponse(
+        content=json.dumps(logical.model_dump(), indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="logical_model.json"'},
+    )
+
+
+@app.get("/physical/view/{artifact_id}", response_class=HTMLResponse)
+def physical_view(artifact_id: str) -> HTMLResponse:
+    physical = get_physical_artifact(artifact_id)
+    if physical is None:
+        raise HTTPException(status_code=404, detail="Physical artifact not found.")
+    return HTMLResponse(
+        content=_build_mermaid_html(
+            "Physical ER Diagram",
+            physical.model_dump(),
+            "physical_model.json",
+            physical.er_diagram_mermaid,
+        )
+    )
+
+
+@app.get("/physical/download/mermaid/{artifact_id}")
+def download_physical_mermaid_artifact(artifact_id: str) -> PlainTextResponse:
+    physical = get_physical_artifact(artifact_id)
+    if physical is None:
+        raise HTTPException(status_code=404, detail="Physical artifact not found.")
+    return PlainTextResponse(
+        content=physical.er_diagram_mermaid,
+        media_type="text/plain",
+        headers={"Content-Disposition": 'attachment; filename="physical_er_diagram.mmd"'},
+    )
+
+
+@app.get("/physical/download/json/{artifact_id}")
+def download_physical_json_artifact(artifact_id: str) -> PlainTextResponse:
+    physical = get_physical_artifact(artifact_id)
+    if physical is None:
+        raise HTTPException(status_code=404, detail="Physical artifact not found.")
+    return PlainTextResponse(
+        content=json.dumps(physical.model_dump(), indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="physical_model.json"'},
     )

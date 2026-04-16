@@ -57,6 +57,7 @@ class LogicalModel(BaseModel):
     tables: List[LogicalTable]
     relationships: List[RelationshipDefinition]
     normalization_notes: List[str] = Field(default_factory=list)
+    er_diagram_mermaid: str = ""
 
 
 class PhysicalModelTemplate(BaseModel):
@@ -96,6 +97,7 @@ class PhysicalModel(BaseModel):
     tables: List[PhysicalTable]
     indexes: List[PhysicalIndex] = Field(default_factory=list)
     ddl: List[str] = Field(default_factory=list)
+    er_diagram_mermaid: str = ""
 
 
 class ConceptualRequest(BaseModel):
@@ -130,3 +132,15 @@ class OrchestratorResponse(BaseModel):
     conceptual_view_url: Optional[str] = None
     conceptual_download_mermaid_url: Optional[str] = None
     conceptual_download_json_url: Optional[str] = None
+    logical_artifact_id: Optional[str] = None
+    logical_view_url: Optional[str] = None
+    logical_download_mermaid_url: Optional[str] = None
+    logical_download_json_url: Optional[str] = None
+    physical_artifact_id: Optional[str] = None
+    physical_view_url: Optional[str] = None
+    physical_download_mermaid_url: Optional[str] = None
+    physical_download_json_url: Optional[str] = None
+
+
+
+
