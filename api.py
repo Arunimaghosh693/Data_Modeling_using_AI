@@ -23,6 +23,7 @@ try:
         save_physical_artifact,
     )
     from orchestrator import DataModelingOrchestrator
+    from rag import warm_rag
     from schemas import ConceptualModel, LogicalModel, ModelingRequest, OrchestratorResponse, PhysicalModel
     from utils.mermaid_builder import build_logical_mermaid, build_mermaid, build_physical_mermaid
 except ImportError:  # pragma: no cover - supports package-style imports
@@ -40,6 +41,7 @@ except ImportError:  # pragma: no cover - supports package-style imports
         save_physical_artifact,
     )
     from .orchestrator import DataModelingOrchestrator
+    from .rag import warm_rag
     from .schemas import ConceptualModel, LogicalModel, ModelingRequest, OrchestratorResponse, PhysicalModel
     from .utils.mermaid_builder import build_logical_mermaid, build_mermaid, build_physical_mermaid
     
@@ -52,6 +54,12 @@ app = FastAPI(
         "the orchestrator invokes the agent, and the agent decides which tools to use."
     ),
 )
+
+
+#editd by mani
+@app.on_event("startup")
+def _warm_rag_on_startup() -> None:
+    warm_rag()
 
 
 def _apply_generated_mermaid(conceptual: ConceptualModel) -> ConceptualModel:
@@ -148,7 +156,8 @@ def healthcheck() -> dict[str, str]:
 @app.post("/orchestrate", response_model=OrchestratorResponse)
 def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> OrchestratorResponse:
     logging.info("/orchestrate endpoint called")
-    result = DataModelingOrchestrator().run(payload.requirement)
+    requirement = payload.requirement
+    result = DataModelingOrchestrator().run(requirement)
 
     conceptual_output = result.get("conceptual_output")
     conceptual_artifact_id = None
@@ -191,7 +200,7 @@ def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> Orchestr
         result["physical_output"] = physical.model_dump()
 
     return OrchestratorResponse(
-        requirement=payload.requirement,
+        requirement=requirement,
         conceptual_output=result.get("conceptual_output"),
         logical_output=result.get("logical_output"),
         physical_output=result.get("physical_output"),

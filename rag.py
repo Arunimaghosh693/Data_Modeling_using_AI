@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import logging
+import re
 from typing import List
 
 import numpy as np
+
+try:
+    from core_banking_glossary_knowledge_base import CORE_BANKING_GLOSSARY_KNOWLEDGE_BASE
+except ImportError:  # pragma: no cover - supports package-style imports
+    from .core_banking_glossary_knowledge_base import CORE_BANKING_GLOSSARY_KNOWLEDGE_BASE
 
 try:
     import faiss
@@ -14,21 +21,18 @@ try:
 except ImportError:  # pragma: no cover - demo can still run with keyword fallback
     SentenceTransformer = None
 
+#editd by mani
+KNOWLEDGE_BASE = CORE_BANKING_GLOSSARY_KNOWLEDGE_BASE
 
-KNOWLEDGE_BASE = [
-    "Customer is a business party who can own one or more accounts.",
-    "An account belongs to exactly one customer in the standard retail banking model.",
-    "A transaction records the movement of funds on an account.",
-    "Conceptual modeling should focus on business entities and relationships, not physical columns.",
-    "Logical modeling introduces primary keys, foreign keys, and normalization guidance.",
-    "Common relationship patterns include 1:1, 1:N, and M:N cardinality.",
-    "SME validation is required before the conceptual model is promoted to logical design.",
-]
-
+logger = logging.getLogger(__name__)
 
 _model = None
 _index = None
 _embeddings = None
+
+
+def _tokenize(text: str) -> List[str]:
+    return re.findall(r"[a-z0-9]+", text.lower().replace("_", " "))
 
 
 def _build_vector_store() -> None:
@@ -42,11 +46,19 @@ def _build_vector_store() -> None:
     _index.add(_embeddings)
 
 
+#editd by mani
+def warm_rag() -> None:
+    try:
+        _build_vector_store()
+    except Exception as exc:  # pragma: no cover - app can still run with keyword fallback
+        logger.warning("RAG warmup skipped: %s", exc)
+
+
 def _keyword_fallback(query: str, k: int) -> List[str]:
-    query_terms = set(query.lower().split())
+    query_terms = set(_tokenize(query))
     scored = []
     for item in KNOWLEDGE_BASE:
-        item_terms = set(item.lower().split())
+        item_terms = set(_tokenize(item))
         overlap = len(query_terms.intersection(item_terms))
         scored.append((overlap, item))
     scored.sort(key=lambda pair: pair[0], reverse=True)
@@ -59,7 +71,13 @@ def get_relevant_context(query: str, k: int = 3) -> str:
     if _index is not None and _model is not None:
         query_embedding = np.array(_model.encode([query]))
         _, indices = _index.search(query_embedding, k)
-        results = [KNOWLEDGE_BASE[i] for i in indices[0]]
+        semantic_results = [KNOWLEDGE_BASE[i] for i in indices[0]]
+        keyword_results = _keyword_fallback(query, k)
+        results = []
+        for item in keyword_results + semantic_results:
+            if item not in results:
+                results.append(item)
+        results = results[:k]
     else:
         results = _keyword_fallback(query, k)
 

@@ -15,6 +15,26 @@ except ImportError:  # pragma: no cover
 
 
 
+def _message_content_as_text(content: Any) -> str:
+    if isinstance(content, list):
+        text_parts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text_parts.append(part.get("text", ""))
+        content = "\n".join(text_parts)
+    if not isinstance(content, str):
+        content = str(content)
+    return content
+
+
+def _safe_extract_tool_json(tool_name: str, content: str) -> Dict[str, Any] | None:
+    try:
+        return extract_json_from_tool_output(content)
+    except Exception as exc:
+        logger.warning("Skipping non-JSON output from %s: %s", tool_name, exc)
+        return None
+
+
 @dataclass
 class DataModelingOrchestrator:
     name: str = "data_modeling_orchestrator"
@@ -34,22 +54,20 @@ class DataModelingOrchestrator:
 
         for message in result.get("messages", []):
             name = getattr(message, "name", "") or ""
-            content = getattr(message, "content", "")
-            if isinstance(content, list):
-                text_parts = []
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text_parts.append(part.get("text", ""))
-                content = "\n".join(text_parts)
-            if not isinstance(content, str):
-                content = str(content)
+            content = _message_content_as_text(getattr(message, "content", ""))
 
-            if name == "conceptual_tool" and conceptual_output is None:
-                conceptual_output = extract_json_from_tool_output(content)
-            elif name == "logical_tool" and logical_output is None:
-                logical_output = extract_json_from_tool_output(content)
-            elif name == "physical_tool" and physical_output is None:
-                physical_output = extract_json_from_tool_output(content)
+            if name == "conceptual_tool":
+                parsed_output = _safe_extract_tool_json(name, content)
+                if parsed_output is not None:
+                    conceptual_output = parsed_output
+            elif name == "logical_tool":
+                parsed_output = _safe_extract_tool_json(name, content)
+                if parsed_output is not None:
+                    logical_output = parsed_output
+            elif name == "physical_tool":
+                parsed_output = _safe_extract_tool_json(name, content)
+                if parsed_output is not None:
+                    physical_output = parsed_output
 
             if content:
                 final_text = content

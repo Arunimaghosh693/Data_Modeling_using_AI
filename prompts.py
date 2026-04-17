@@ -1,70 +1,82 @@
 import json
 from typing import Any, Dict
 
+
+#editd by mani
+def _compact_json(data: Dict[str, Any]) -> str:
+    return json.dumps(data, separators=(",", ":"))
+
+
+#editd by mani
+def _logical_prompt_payload(conceptual_output: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "title": conceptual_output.get("title", ""),
+        "scope": conceptual_output.get("scope", ""),
+        "entities": [
+            {
+                "name": entity.get("name", ""),
+                "description": entity.get("description", ""),
+                "attributes": entity.get("attributes", []),
+            }
+            for entity in conceptual_output.get("entities", [])
+        ],
+        "relationships": [
+            {
+                "from_entity": relationship.get("from_entity", ""),
+                "to_entity": relationship.get("to_entity", ""),
+                "cardinality": relationship.get("cardinality", ""),
+                "description": relationship.get("description", ""),
+                "label": relationship.get("label"),
+            }
+            for relationship in conceptual_output.get("relationships", [])
+        ],
+        "business_rules": conceptual_output.get("business_rules", []),
+    }
+
+
+#editd by mani
+def _physical_prompt_payload(logical_output: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "tables": [
+            {
+                "table_name": table.get("table_name", ""),
+                "source_entity": table.get("source_entity", ""),
+                "columns": [
+                    {
+                        "name": column.get("name", ""),
+                        "type": column.get("type", ""),
+                        "nullable": column.get("nullable", True),
+                    }
+                    for column in table.get("columns", [])
+                ],
+                "primary_key": table.get("primary_key", []),
+                "foreign_keys": table.get("foreign_keys", []),
+            }
+            for table in logical_output.get("tables", [])
+        ]
+    }
+
+
 def get_conceptual_prompt(requirement: str, context: str) -> str:
     return f"""
-You are a banking domain expert and enterprise data architect. A business requirement for a 
-a Credit Risk use case is provided. Your task is to understand the business requirement throughly and understand 
-what are the different entities, relationships are present in the business requirement and how we can generate a 
-conceptual level details
+You are a banking domain expert and enterprise data architect.
 
 Business requirement:
 {requirement}
 
-Use this context to understand meaning of different business
-terms. 
-
-Context:
+Authoritative glossary context:
 {context}
 
-Create a detailed conceptual model and return ONLY valid JSON.
+Return ONLY valid JSON for a conceptual model.
 
 Rules:
-- Identify business entities and key relationships.
-- Stay strictly as Business/Conceptual level
-- Do NOT include primary keys or foriegn keys
-- Do NOT design fact tables or dimension tables 
-- Do NOT include calculations or formulas 
-- Do NOT include PD, LGD, EAD, IFRS 9, or Basel calculations
-- Focus ONLY on core business entities and their relationships 
-- Do not invent detailed technical columns unless strongly implied.
-- Keep the answer aligned to business semantics, not implementation details.
+- Use the glossary context as the source of truth.
+- Include only glossary-supported entities and relationships.
+- Stay strictly conceptual: no PK, FK, SQL, indexing, storage, or calculations.
+- Keep names business-friendly and prefer domain-specific names like Loan_Default over Default.
+- Use entity profiles and column hints only to understand business meaning, not to design technical schemas.
 
-Scope: 
-- End-to-End Credit Risk lifecyle 
-- From customer onboarding and loan orginiation
-- Through credit assesment and ongoinh monitoring
-- To default and recovery
-- Applicable to both Retail and Corperate banking 
-
-What you need to do:
-  - Parse the provided business requirement text 
-  - Identify core business entities involved in Credit Risk
-  - Define each entity in plain, business friendly language 
-  - Infer high-level relationships between entities 
-  - Indicate relationship type:
-      - One-to-One 
-      - One-to-many
-      - Many-to-Many
-  - Identify the CENTRAL business entity in Credit Risk 
-
-  Deliverables: 
-  - List of conceptual entities with short business definitions 
-  - High-level relationships expressed in plain English 
-  - Relationship type ( One-to-One, One-to-Many, Many-to-Many)
-  - Identification of the central business entity 
-  - A concise conceptal summary
-  - A valid and fully detailed JSON file to describe the conceptual level understand 
-  - This json will be used to visulize the ER diagram 
- 
-  Important Rules:
-  - Entity names must be business nouns (e.g., Customer, Facility, Account)
-  - Prefer domain-specific entity names like Loan_Default and Loan_Recovery instead of generic names like Default and Recovery
-  - Definitions must be non-technical and easy to understand 
-  - Relationships must be described in business language 
-  - Do NOT incliude any implementation or database terminology
-
-Example JSON structure:
+Required output:
 {{
   "title": "string",
   "scope": "string",
@@ -86,131 +98,34 @@ Example JSON structure:
   ],
   "business_rules": ["string"],
   "conceptual_summary": "string",
-  "diagram_description": "string",
+  "diagram_description": "string"
 }}
 """.strip()
 
 
 def get_logical_prompt(conceptual_output: Dict[str, Any]) -> str:
-    conceptual_json = json.dumps(conceptual_output, indent=2)
+    conceptual_json = _compact_json(_logical_prompt_payload(conceptual_output))
 
     return f"""
 You are a banking domain expert and enterprise data architect.
 
-You are given an APPROVED conceptual ER model for a Credit Risk system.  
-Your task is to transform it into a LOGICAL data model.
-
------------------------------------
-CONTEXT
------------------------------------
-- Domain: Banking (Credit Risk)
-- Scope: End-to-end credit lifecycle
-(Origination → Assessment → Monitoring → Default → Recovery) 109
-
------------------------------------
-OBJECTIVE
------------------------------------
-Convert the conceptual model into a structured logical data model.
-
------------------------------------
-STRICT RULES
------------------------------------
-- Stay strictly at the LOGICAL level.
-- Do NOT generate physical DDL (no SQL, no storage details).
-- Do NOT include performance or indexing considerations.
-- Do NOT classify tables as fact/dimension.
-- Do NOT include financial calculations (PD, LGD, EAD, IFRS-9, Basel).
-- Use ONLY the provided conceptual model (no hallucination).
-
------------------------------------
-WHAT YOU MUST DO
------------------------------------
-1. Convert conceptual entities into logical tables.
-2. Define columns for each table (business-relevant attributes).
-3. Identify PRIMARY KEYS for each table.
-4. Define FOREIGN KEY relationships between tables.
-5. Resolve MANY-TO-MANY relationships using associative tables.
-6. Maintain all relationships from the conceptual model.
-7. Implement all the relationships properly mentioned in the conceptual model. 
-7. Apply basic normalization (avoid redundancy, logical grouping).
-8. Include audit-style attributes where appropriate (e.g., status, effective dates).
-
------------------------------------
-IMPORTANT CONSTRAINTS
------------------------------------
-- Column types should be GENERIC (e.g., string, number, date).
-- Do NOT use database-specific types.
-- Preserve business meaning from conceptual model.
-
------------------------------------
-PRIMARY KEY & FOREIGN KEY CONSTRAINTS
------------------------------------
-
-PRIMARY KEY RULES:
-
-- Every table MUST have a primary key.
-
-- Primary key must uniquely identify each record.
-
-- Primary key columns must NOT be nullable.
-
-- Use surrogate keys for all main entities:
-  → Format: <Entity_Name>_ID
-  → Examples: Customer_ID, Account_ID, Transaction_ID
-
-- Do NOT use business attributes (e.g., Name, Email, Phone) as primary keys.
-
-- Primary keys must be stable and should not change over time.
-
-- Ensure consistent naming convention across all tables.
-
-- For associative (bridge) tables:
-  → Use composite primary key consisting of foreign keys
-  → Example: (Facility_ID, Collateral_ID)
-
------------------------------------
-
-FOREIGN KEY RULES:
-
-- Every structural relationship between entities MUST be implemented using foreign keys.
-
-- For every 1:N relationship:
-  → Add a foreign key in the child table referencing the parent table’s primary key.
-
-- For every 1:1 relationship:
-  → Add a foreign key in the dependent entity
-  → OR use shared primary key if entities are tightly coupled.
-
-- For every M:N relationship:
-  → Create an associative (bridge) table
-  → Add foreign keys referencing both parent tables
-  → Use these foreign keys as composite primary key
-
-- Foreign key columns must match the referenced primary key in meaning and type (logical level).
-
-- Tables may not contain foreign keys if they represent root or independent entities.
-
------------------------------------
-
-CONSISTENCY VALIDATION (VERY IMPORTANT)
-
-Before returning the final JSON:
-- Ensure every table has a valid primary key.
-- Ensure every relationship is implemented using foreign keys or associative tables.
-- Ensure no relationship from the conceptual model is missing in logical design.
-- Ensure naming consistency between PK and FK (e.g., Customer_ID matches Customer table).
-
------------------------------------
-INPUT (APPROVED CONCEPTUAL MODEL)
------------------------------------
+Approved conceptual model:
 {conceptual_json}
 
------------------------------------
-OUTPUT REQUIREMENTS
------------------------------------
-Return ONLY valid JSON (no explanation).
+Return ONLY valid JSON for a logical model.
 
-Example JSON structure:
+Rules:
+- Use ONLY the provided conceptual model.
+- Stay at the logical level: no physical DDL, storage, indexing, or performance tuning.
+- Convert entities into tables and preserve all conceptual relationships.
+- Add business-relevant columns, primary keys, and foreign keys.
+- Resolve every M:N relationship with an associative table.
+- Use generic types only: string, number, date, datetime, boolean.
+- Keep naming consistent, especially PK/FK pairs.
+- All surrogate primary key and foreign key identifier columns must use type "number", not "string".
+- Identifier columns such as Customer_ID, Facility_ID, Loan_ID, and bridge-table key columns must remain numeric.
+
+Required output:
 {{
   "source_entities": ["string"],
   "tables": [
@@ -249,48 +164,28 @@ Example JSON structure:
 
 #added by swamy
 def get_physical_prompt(logical_output: Dict[str, Any]) -> str:
-    logical_json = json.dumps(logical_output, indent=2)
+    logical_json = _compact_json(_physical_prompt_payload(logical_output))
     return f"""
 You are a banking domain expert and senior physical data modeling agent.
 
-You are given an APPROVED logical data model for a Credit Risk system.
-Your task is to transform it into a PHYSICAL data model with generic DDL output.
-
------------------------------------
-STRICT RULES
------------------------------------
-- Use ONLY the provided logical model as the source of truth.
-- Do NOT invent new business entities.
-- Do NOT remove approved tables or relationships.
-- Do NOT generate database connection or execution steps.
-- Do NOT assume a specific database engine.
-- Generate generic DDL for review/demo purposes only.
-- Preserve all primary keys and foreign keys from the logical model.
-- Add indexes mainly for foreign keys and common relationship joins.
-
------------------------------------
-WHAT YOU MUST DO
------------------------------------
-1. Map generic logical types to generic physical types.
-2. Generate physical tables and columns.
-3. Generate primary key and foreign key constraints.
-4. Suggest indexes for join and lookup performance.
-5. Generate generic DDL statements.
-6. Include deployment notes.
-
------------------------------------
-INPUT (APPROVED LOGICAL MODEL)
------------------------------------
+Approved logical model:
 {logical_json}
 
------------------------------------
-OUTPUT REQUIREMENTS
------------------------------------
-Return ONLY valid JSON (no explanation).
+Return ONLY valid JSON for a physical model.
 
-Example JSON structure:
+Rules:
+- Use ONLY the provided logical model.
+- Do NOT invent, remove, or rename approved tables or relationships.
+- Do NOT add database connection, execution, or engine-specific behavior.
+- Map generic logical types to generic physical types.
+- Preserve PK/FK constraints and add indexes mainly for foreign keys and joins.
+- Generate generic DDL suitable for review/demo use.
+- Use integer-style physical types for surrogate PK/FK identifier columns, for example BIGINT.
+- Do NOT use VARCHAR/TEXT for surrogate primary key or foreign key columns.
+
+Required output:
 {{
- "tables": [
+  "tables": [
     {{
       "table_name": "string",
       "columns": [

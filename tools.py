@@ -58,74 +58,154 @@ def extract_json_from_tool_output(text: str) -> Dict[str, Any]:
     return _extract_json(text)
 
 
-def _infer_entities(requirement: str, context: str) -> List[Dict[str, Any]]:
-    text = f"{requirement}\n{context}".lower()
-    candidates = [
-        ("Customer", ["customer", "client", "borrower"]),
-        ("Facility", ["facility", "loan", "credit line"]),
-        ("Application", ["application", "onboarding", "origination"]),
-        ("Account", ["account", "wallet", "profile"]),
-        ("Transaction", ["transaction", "payment", "transfer"]),
-        ("Collateral", ["collateral", "security", "pledge"]),
-        ("Default", ["default", "delinquency", "past due"]),
-        ("Recovery", ["recovery", "collection", "restructure"]),
-    ]
-    entities: List[Dict[str, Any]] = []
-    for name, keywords in candidates:
-        if any(keyword in text for keyword in keywords):
-            entities.append(
-                {
-                    "name": name,
-                    "description": f"Business entity inferred for {name.lower()} management.",
-                    "attributes": [],
-                }
-            )
+#editd by mani
+def _is_canonical_entity_name(entity_name: str) -> bool:
+    return bool(re.fullmatch(r"[A-Z][A-Z0-9_]*", entity_name))
 
-    if len(entities) < 2:
-        entities = [
+
+#editd by mani
+def _business_name_from_canonical(entity_name: str) -> str:
+    return entity_name.replace("_", " ").title()
+
+
+#editd by mani
+def _extract_context_entities(context: str) -> List[Dict[str, Any]]:
+    entities_by_canonical: Dict[str, Dict[str, Any]] = {}
+
+    for line in context.splitlines():
+        line = line.strip()
+        if not line.startswith("Business concept:"):
+            continue
+
+        match = re.match(
+            r"Business concept:\s*(?P<term>[^.]+)\.\s*"
+            r"Canonical ER entity:\s*(?P<entity>[^.]+)\.\s*"
+            r"Definition:\s*(?P<definition>.+?)\.\s*"
+            r"Business usage:",
+            line,
+        )
+        if not match:
+            continue
+
+        canonical_entity = match.group("entity").strip()
+        if not _is_canonical_entity_name(canonical_entity):
+            continue
+
+        entities_by_canonical[canonical_entity] = {
+            "name": match.group("term").strip(),
+            "description": match.group("definition").strip(),
+            "attributes": [],
+        }
+
+    for line in context.splitlines():
+        line = line.strip()
+        if not line.startswith("Entity profile:"):
+            continue
+
+        match = re.match(
+            r"Entity profile:\s*(?P<entity>[A-Z0-9_]+)\.\s*"
+            r"(?:Business terms:\s*(?P<terms>[^.]+)\.\s*)?",
+            line,
+        )
+        if not match:
+            continue
+
+        canonical_entity = match.group("entity").strip()
+        if not _is_canonical_entity_name(canonical_entity):
+            continue
+
+        entity = entities_by_canonical.setdefault(
+            canonical_entity,
             {
-                "name": "Customer",
-                "description": "Borrower or business party under credit assessment.",
+                "name": _business_name_from_canonical(canonical_entity),
+                "description": f"Business entity grounded in glossary context for {canonical_entity}.",
                 "attributes": [],
             },
-            {
-                "name": "Facility",
-                "description": "Credit product or exposure granted to the customer.",
-                "attributes": [],
-            },
-        ]
-    return entities
+        )
+
+        terms = (match.group("terms") or "").strip()
+        if terms and entity["name"] == _business_name_from_canonical(canonical_entity):
+            entity["name"] = terms.split(",")[0].strip()
+
+    return list(entities_by_canonical.values())
+
+
+#editd by mani
+def _extract_context_relationships(context: str, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    business_name_by_canonical = {
+        entity["name"].upper().replace(" ", "_"): entity["name"]
+        for entity in entities
+    }
+    relationships_by_key: Dict[tuple[str, str], Dict[str, Any]] = {}
+
+    for line in context.splitlines():
+        line = line.strip()
+        if not line.startswith("Entity profile:"):
+            continue
+
+        entity_match = re.match(r"Entity profile:\s*(?P<entity>[A-Z0-9_]+)\.", line)
+        if not entity_match:
+            continue
+
+        child_canonical = entity_match.group("entity").strip()
+        child_name = business_name_by_canonical.get(child_canonical)
+        if not child_name:
+            continue
+
+        reference_match = re.search(
+            r"Identifiers and reference attributes:\s*(?P<references>.+?)\.\s*"
+            r"(?:Typical business attributes:|Notes and examples:|$)",
+            line,
+        )
+        if not reference_match:
+            continue
+
+        reference_text = reference_match.group("references")
+        for reference_part in reference_text.split(";"):
+            attribute_name = reference_part.strip().split(" means ", 1)[0].strip()
+            if not attribute_name.endswith("_id"):
+                continue
+
+            parent_canonical = attribute_name[:-3].upper()
+            if parent_canonical == child_canonical:
+                continue
+
+            parent_name = business_name_by_canonical.get(parent_canonical)
+            if not parent_name:
+                continue
+
+            relationship_key = (parent_name, child_name)
+            if relationship_key in relationships_by_key:
+                continue
+
+            relationships_by_key[relationship_key] = {
+                "from_entity": parent_name,
+                "to_entity": child_name,
+                "cardinality": "1:N",
+                "description": f"One {parent_name} can be associated with many {child_name} records based on glossary reference attributes.",
+                "label": "relates to",
+            }
+
+    return list(relationships_by_key.values())
 
 
 def _fallback_conceptual_model(requirement: str, context: str) -> Dict[str, Any]:
-    entities = _infer_entities(requirement, context)
-    relationships: List[Dict[str, Any]] = []
-    if len(entities) >= 2:
-        first = entities[0]["name"]
-        second = entities[1]["name"]
-        relationships.append(
-            {
-                "from_entity": first,
-                "to_entity": second,
-                "cardinality": "1:N",
-                "description": f"One {first} can be associated with many {second} records.",
-                "label": "has",
-            }
-        )
+    entities = _extract_context_entities(context)
+    relationships = _extract_context_relationships(context, entities)
 
     return {
         "title": "Conceptual Credit Risk Model",
-        "scope": "Business-level conceptual model inferred from the provided requirement.",
+        "scope": "Business-level conceptual model grounded only in the retrieved glossary context.",
         "requirement": requirement,
         "rag_context_used": context,
         "entities": entities,
         "relationships": relationships,
         "business_rules": [
-            "Cardinality should be reviewed and approved by the SME.",
-            "Entity names should reflect business language, not technical table names.",
+            "Only glossary-supported entities and relationships are included in this fallback conceptual model.",
+            "Cardinality inferred from glossary reference attributes should be reviewed and approved by the SME.",
         ],
-        "conceptual_summary": "This draft identifies the core business entities and high-level relationships for the requested use case.",
-        "diagram_description": "ER diagram derived from conceptual business entities and their cardinality.",
+        "conceptual_summary": "This draft identifies business entities and high-level relationships using retrieved glossary context only.",
+        "diagram_description": "ER diagram derived from glossary-grounded conceptual entities and inferred relationships.",
     }
 
 
@@ -199,6 +279,8 @@ def _map_column_data_type(
 ) -> str:
     type_text = (logical_type or "").lower()
 
+    if is_primary_key or is_foreign_key:
+        return "BIGINT"
     if any(token in type_text for token in ["int", "number"]):
         return "INTEGER"
     if any(token in type_text for token in ["decimal", "numeric", "amount", "money"]):
@@ -212,6 +294,96 @@ def _map_column_data_type(
     if "text" in type_text:
         return "TEXT"
     return "VARCHAR(255)"
+
+
+#editd by mani
+def _normalize_logical_identifier_types(logical_output: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_tables = []
+
+    for table in logical_output.get("tables", []):
+        primary_keys = set(table.get("primary_key", []))
+        foreign_key_columns = {
+            foreign_key.get("column", "")
+            for foreign_key in table.get("foreign_keys", [])
+        }
+        normalized_columns = []
+
+        for column in table.get("columns", []):
+            normalized_column = dict(column)
+            column_name = normalized_column.get("name", "")
+            if column_name in primary_keys or column_name in foreign_key_columns:
+                normalized_column["type"] = "number"
+                normalized_column["nullable"] = False
+            normalized_columns.append(normalized_column)
+
+        normalized_table = dict(table)
+        normalized_table["columns"] = normalized_columns
+        normalized_tables.append(normalized_table)
+
+    normalized_output = dict(logical_output)
+    normalized_output["tables"] = normalized_tables
+    return normalized_output
+
+
+#editd by mani
+def _rebuild_physical_ddl(physical_output: Dict[str, Any]) -> List[str]:
+    ddl = []
+
+    for table in physical_output.get("tables", []):
+        column_lines = []
+        for column in table.get("columns", []):
+            null_clause = "NULL" if column.get("nullable", True) else "NOT NULL"
+            column_lines.append(
+                f"  {column.get('name', '')} {column.get('column_data_type', 'VARCHAR(255)')} {null_clause}"
+            )
+
+        ddl.append(
+            _build_table_ddl(
+                table,
+                column_lines,
+                table.get("primary_key", []),
+                table.get("foreign_keys", []),
+            )
+        )
+
+    for index in physical_output.get("indexes", []):
+        ddl.append(
+            f"CREATE INDEX {index['index_name']} "
+            f"ON {index['table_name']} "
+            f"({', '.join(index['columns'])});"
+        )
+
+    return ddl
+
+
+#editd by mani
+def _normalize_physical_identifier_types(physical_output: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_tables = []
+
+    for table in physical_output.get("tables", []):
+        primary_keys = set(table.get("primary_key", []))
+        foreign_key_columns = {
+            foreign_key.get("column", "")
+            for foreign_key in table.get("foreign_keys", [])
+        }
+        normalized_columns = []
+
+        for column in table.get("columns", []):
+            normalized_column = dict(column)
+            column_name = normalized_column.get("name", "")
+            if column_name in primary_keys or column_name in foreign_key_columns:
+                normalized_column["column_data_type"] = "BIGINT"
+                normalized_column["nullable"] = False
+            normalized_columns.append(normalized_column)
+
+        normalized_table = dict(table)
+        normalized_table["columns"] = normalized_columns
+        normalized_tables.append(normalized_table)
+
+    normalized_output = dict(physical_output)
+    normalized_output["tables"] = normalized_tables
+    normalized_output["ddl"] = _rebuild_physical_ddl(normalized_output)
+    return normalized_output
 
 
 #added by swamy
@@ -370,7 +542,7 @@ def _generate_json(prompt: str, system_message: str) -> Dict[str, Any]:
     return _extract_json(response.output_text)
 
 
-def rag_context_core(requirement: str, k: int = 3) -> str:
+def rag_context_core(requirement: str, k: int = 5) -> str:
     return get_relevant_context(requirement, k=k)
 
 
@@ -381,7 +553,7 @@ def conceptual_model_core(requirement: str) -> Dict[str, Any]:
         conceptual = ConceptualModel.model_validate(
             _generate_json(
                 prompt,
-                "You are a senior enterprise data architect specializing in conceptual data modeling.",
+                "You are a senior enterprise data architect specializing in conceptual data modeling. Use only the supplied glossary context as the source of truth and do not invent unsupported entities or relationships.",
             )
         )
         if not conceptual.requirement:
@@ -402,7 +574,7 @@ def logical_model_core(conceptual_payload: Dict[str, Any]) -> Dict[str, Any]:
                 "You are a senior data modeler specializing in logical data modeling.",
             )
         )
-        return logical.model_dump()
+        return _normalize_logical_identifier_types(logical.model_dump())
     except Exception:
         return _fallback_logical_model(conceptual_payload)
 
@@ -417,7 +589,7 @@ def physical_model_core(logical_payload: Dict[str, Any]) -> Dict[str, Any]:
                 "You are a senior physical data modeler specializing in DDL artifact generation.",
             )
         )
-        return physical.model_dump()
+        return _normalize_physical_identifier_types(physical.model_dump())
     except Exception:
         fallback = _fallback_physical_model(logical_payload)
         return PhysicalModel.model_validate(fallback).model_dump()
@@ -456,5 +628,3 @@ def physical_tool(logical_json: str) -> str:
     logical_payload = extract_json_from_tool_output(logical_json)
     physical = physical_model_core(logical_payload)
     return f"PHYSICAL_MODEL_JSON:\n{json.dumps(physical, indent=2)}"
-
-
