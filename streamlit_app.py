@@ -1,24 +1,18 @@
-import streamlit as st
-import requests
 import json
+
+import requests
+import streamlit as st
 
 API = "http://127.0.0.1:8000"
 
-# ---------------------------------------------------
-# Page Config
-# ---------------------------------------------------
-st.set_page_config(
-    page_title="AI Data Modeling Workflow",
-    layout="wide"
-)
+st.set_page_config(page_title="AI Data Modeling Workflow", layout="wide")
 
 st.title("AI Data Modeling Workflow")
-st.caption("Conceptual → Review → Logical → Review → Physical")
+st.caption("Conceptual -> Review -> Approve -> Logical + Physical")
 
-# ---------------------------------------------------
-# Session State Initialization
-# ---------------------------------------------------
-defaults = {
+DEFAULTS = {
+    "artifact_id": None,
+    "conceptual_status": None,
     "conceptual": None,
     "logical": None,
     "physical": None,
@@ -27,31 +21,28 @@ defaults = {
     "physical_url": None,
 }
 
-for key, value in defaults.items():
+for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# ---------------------------------------------------
-# Helpers
-# ---------------------------------------------------
-def api_post(endpoint, payload):
+
+def api_post(payload: dict) -> requests.Response:
     try:
-        res = requests.post(
-            f"{API}{endpoint}",
+        return requests.post(
+            f"{API}/orchestrate",
             json=payload,
-            timeout=300
+            timeout=300,
         )
-        return res
     except requests.exceptions.ConnectionError:
         st.error("FastAPI backend not running.")
         st.info("Run: uvicorn api:app --reload")
         st.stop()
-    except Exception as e:
-        st.error(str(e))
+    except Exception as exc:  # pragma: no cover - UI-only safeguard
+        st.error(str(exc))
         st.stop()
 
 
-def show_json(data, title):
+def show_json(data, title: str) -> None:
     st.subheader(title)
 
     if not data:
@@ -72,216 +63,147 @@ def show_json(data, title):
     st.write(data)
 
 
-def show_diagram(title, url):
+def show_diagram(title: str, url: str | None) -> None:
     st.markdown(f"### {title}")
 
-    if url:
-        st.link_button(f"Open {title}", url)
-        st.components.v1.iframe(
-            url,
-            height=500,
-            scrolling=True
-        )
-    else:
+    if not url:
         st.info("Diagram not available.")
+        return
+
+    st.link_button(f"Open {title}", url)
+    st.components.v1.iframe(url, height=500, scrolling=True)
 
 
-# ---------------------------------------------------
-# Step 1: Requirement Input
-# ---------------------------------------------------
+def _store_orchestrate_response(data: dict) -> None:
+    st.session_state.artifact_id = data.get("conceptual_artifact_id", st.session_state.artifact_id)
+    st.session_state.conceptual_status = data.get("conceptual_status")
+    st.session_state.conceptual = data.get("conceptual_output")
+    st.session_state.logical = data.get("logical_output")
+    st.session_state.physical = data.get("physical_output")
+    st.session_state.conceptual_url = data.get("conceptual_view_url")
+    st.session_state.logical_url = data.get("logical_view_url")
+    st.session_state.physical_url = data.get("physical_view_url")
+
+
 requirement = st.text_area(
     "Enter Business Requirement",
     height=180,
-    placeholder="Example: Build a banking data model with customer, account, loan, transaction and repayment entities."
+    placeholder="Example: Build a banking data model with customer, account, loan, transaction and repayment entities.",
 )
 
-col1, col2 = st.columns([1, 5])
-
-with col1:
-    generate = st.button("Generate Conceptual")
-
-# ---------------------------------------------------
-# Generate Conceptual
-# ---------------------------------------------------
-if generate:
-
+if st.button("Generate Conceptual"):
     if not requirement.strip():
         st.warning("Please enter requirement.")
         st.stop()
 
-    with st.spinner("Generating Conceptual Model..."):
-        res = api_post(
-            "/generate-conceptual",
-            {"requirement": requirement}
-        )
+    with st.spinner("Generating conceptual draft..."):
+        response = api_post({"requirement": requirement})
 
-    if res.status_code != 200:
-        st.error(res.text)
+    if response.status_code != 200:
+        st.error(response.text)
         st.stop()
 
-    data = res.json()
+    _store_orchestrate_response(response.json())
+    st.success("Conceptual draft generated.")
+    st.rerun()
 
-    st.session_state.conceptual = data.get("conceptual_output")
-    st.session_state.conceptual_url = data.get("conceptual_view_url")
 
-    st.success("Conceptual Model Generated")
-
-# ---------------------------------------------------
-# Conceptual Section
-# ---------------------------------------------------
 if st.session_state.conceptual:
-
     st.divider()
     st.header("Step 2: Review Conceptual Model")
+    if st.session_state.artifact_id:
+        st.caption(f"Artifact ID: {st.session_state.artifact_id}")
 
     tab1, tab2 = st.tabs(["JSON", "Diagram"])
 
     with tab1:
-        show_json(
-            st.session_state.conceptual,
-            "Conceptual Model"
-        )
+        show_json(st.session_state.conceptual, "Conceptual Model")
 
     with tab2:
-        show_diagram(
-            "Conceptual Diagram",
-            st.session_state.conceptual_url
+        show_diagram("Conceptual Diagram", st.session_state.conceptual_url)
+
+    if st.session_state.conceptual_status != "approved":
+        st.subheader("Add Changes")
+        change_request = st.text_input(
+            "Example: Connect Customer to Account one to many",
+            key="conceptual_change_request",
         )
 
-    # -------------------------------
-    # Add Changes
-    # -------------------------------
-    st.subheader("Add Changes")
+        col1, col2 = st.columns(2)
 
-    change_request = st.text_input(
-        "Example: Connect Customer to Account one to many"
-    )
+        with col1:
+            if st.button("Apply Conceptual Changes"):
+                if not change_request.strip():
+                    st.warning("Please describe the change.")
+                    st.stop()
 
-    col1, col2 = st.columns(2)
+                with st.spinner("Updating conceptual draft..."):
+                    response = api_post(
+                        {
+                            "artifact_id": st.session_state.artifact_id,
+                            "requirement": change_request,
+                        }
+                    )
 
-    with col1:
-        if st.button("Apply Conceptual Changes"):
+                if response.status_code != 200:
+                    st.error(response.text)
+                    st.stop()
 
-            with st.spinner("Updating Conceptual Model..."):
-                res = api_post(
-                    "/update-conceptual",
-                    {
-                        "existing_model": st.session_state.conceptual,
-                        "change_request": change_request
-                    }
-                )
-
-            if res.status_code == 200:
-                data = res.json()
-
-                st.session_state.conceptual = data.get("conceptual_output")
-                st.session_state.conceptual_url = data.get("conceptual_view_url")
-
-                st.success("Conceptual Model Updated")
+                _store_orchestrate_response(response.json())
+                st.success("Conceptual draft updated.")
                 st.rerun()
 
-            else:
-                st.error(res.text)
+        with col2:
+            if st.button("Approve Conceptual"):
+                with st.spinner("Generating logical and physical models..."):
+                    response = api_post(
+                        {
+                            "artifact_id": st.session_state.artifact_id,
+                            "requirement": "approve",
+                        }
+                    )
 
-    with col2:
-        if st.button("Approve Conceptual"):
+                if response.status_code != 200:
+                    st.error(response.text)
+                    st.stop()
 
-            with st.spinner("Generating Logical Model..."):
-                res = api_post(
-                    "/generate-logical",
-                    {
-                        "conceptual_model": st.session_state.conceptual
-                    }
-                )
-
-            if res.status_code == 200:
-                data = res.json()
-
-                st.session_state.logical = data.get("logical_output")
-                st.session_state.logical_url = data.get("logical_view_url")
-
-                st.success("Logical Model Generated")
+                _store_orchestrate_response(response.json())
+                st.success("Conceptual draft approved.")
                 st.rerun()
 
-            else:
-                st.error(res.text)
 
-# ---------------------------------------------------
-# Logical Section
-# ---------------------------------------------------
 if st.session_state.logical:
-
     st.divider()
-    st.header("Step 3: Review Logical Model")
+    st.header("Step 3: Logical Model")
 
     tab3, tab4 = st.tabs(["JSON", "Diagram"])
 
     with tab3:
-        show_json(
-            st.session_state.logical,
-            "Logical Model"
-        )
+        show_json(st.session_state.logical, "Logical Model")
 
     with tab4:
-        show_diagram(
-            "Logical Diagram",
-            st.session_state.logical_url
-        )
+        show_diagram("Logical Diagram", st.session_state.logical_url)
 
-    if st.button("Approve Logical"):
 
-        with st.spinner("Generating Physical Model..."):
-            res = api_post(
-                "/generate-physical",
-                {
-                    "logical_model": st.session_state.logical
-                }
-            )
-
-        if res.status_code == 200:
-            data = res.json()
-
-            st.session_state.physical = data.get("physical_output")
-            st.session_state.physical_url = data.get("physical_view_url")
-
-            st.success("Physical Model Generated")
-            st.rerun()
-
-        else:
-            st.error(res.text)
-
-# ---------------------------------------------------
-# Physical Section
-# ---------------------------------------------------
 if st.session_state.physical:
-
     st.divider()
     st.header("Step 4: Physical Model")
 
     tab5, tab6 = st.tabs(["JSON", "Diagram"])
 
     with tab5:
-        show_json(
-            st.session_state.physical,
-            "Physical Model"
-        )
+        show_json(st.session_state.physical, "Physical Model")
 
         ddl = None
-
         if isinstance(st.session_state.physical, dict):
             ddl = st.session_state.physical.get("ddl")
 
         if ddl:
             st.subheader("DDL Scripts")
-
             if isinstance(ddl, list):
-                for stmt in ddl:
-                    st.code(stmt, language="sql")
+                st.code("\n".join(ddl), language="sql")
             else:
                 st.code(str(ddl), language="sql")
 
     with tab6:
-        show_diagram(
-            "Physical Diagram",
-            st.session_state.physical_url
-        )
+        show_diagram("Physical Diagram", st.session_state.physical_url)
