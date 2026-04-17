@@ -32,6 +32,12 @@ class ConceptualModel(BaseModel):
     er_diagram_mermaid: str = ""
 
 
+#editd by mani
+class ConceptualUpdatePatch(BaseModel):
+    entities_to_add: List[EntityDefinition] = Field(default_factory=list)
+    relationships_to_add_or_update: List[RelationshipDefinition] = Field(default_factory=list)
+
+
 class LogicalColumn(BaseModel):
     name: str
     type: str
@@ -110,6 +116,15 @@ class LogicalRequest(BaseModel):
 
 class ModelingRequest(BaseModel):
     requirement: str = Field(..., description="Business requirement or use case from the user.")
+    artifact_id: Optional[str] = Field(
+        default=None,
+        description="Existing conceptual artifact to update or approve using the same /orchestrate endpoint.",
+    )
+    from_entity: Optional[str] = None
+    to_entity: Optional[str] = None
+    cardinality: str = "M:N"
+    description: Optional[str] = None
+    label: Optional[str] = None
 
 
 class ConceptualResponse(BaseModel):
@@ -127,6 +142,7 @@ class OrchestratorResponse(BaseModel):
     conceptual_output: Optional[ConceptualModel] = None
     logical_output: Optional[LogicalModel] = None
     physical_output: Optional[PhysicalModel] = None  #added by swamy
+    conceptual_status: Optional[str] = None
     agent_final_answer: str = ""
     conceptual_artifact_id: Optional[str] = None
     conceptual_view_url: Optional[str] = None

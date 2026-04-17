@@ -57,6 +57,29 @@ def _physical_prompt_payload(logical_output: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+#editd by mani
+def _conceptual_update_prompt_payload(conceptual_output: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "title": conceptual_output.get("title", ""),
+        "entities": [
+            {
+                "name": entity.get("name", ""),
+                "description": entity.get("description", ""),
+            }
+            for entity in conceptual_output.get("entities", [])
+        ],
+        "relationships": [
+            {
+                "from_entity": relationship.get("from_entity", ""),
+                "to_entity": relationship.get("to_entity", ""),
+                "cardinality": relationship.get("cardinality", ""),
+                "label": relationship.get("label"),
+            }
+            for relationship in conceptual_output.get("relationships", [])
+        ],
+    }
+
+
 def get_conceptual_prompt(requirement: str, context: str) -> str:
     return f"""
 You are a banking domain expert and enterprise data architect.
@@ -75,6 +98,7 @@ Rules:
 - Stay strictly conceptual: no PK, FK, SQL, indexing, storage, or calculations.
 - Keep names business-friendly and prefer domain-specific names like Loan_Default over Default.
 - Use entity profiles and column hints only to understand business meaning, not to design technical schemas.
+- Every conceptual entity must participate in at least one relationship. Do not return isolated or orphan entities.
 
 Required output:
 {{
@@ -99,6 +123,51 @@ Required output:
   "business_rules": ["string"],
   "conceptual_summary": "string",
   "diagram_description": "string"
+}}
+""".strip()
+
+
+#editd by mani
+def get_conceptual_update_prompt(conceptual_output: Dict[str, Any], instruction: str) -> str:
+    conceptual_json = _compact_json(_conceptual_update_prompt_payload(conceptual_output))
+
+    return f"""
+You are updating an existing conceptual ER model based on a user chat instruction.
+
+Current conceptual model:
+{conceptual_json}
+
+User update instruction:
+{instruction}
+
+Return ONLY valid JSON describing the required patch.
+
+Rules:
+- Keep the existing conceptual structure unchanged unless the instruction requests a change.
+- Reuse existing entity names exactly when referring to existing entities.
+- Add a new entity only when the instruction clearly asks for one.
+- Add or update only the relationships needed for the instruction.
+- Stay strictly conceptual: no PK, FK, SQL, or physical details.
+- If a new entity is added, also include at least one relationship that connects it to an existing or newly added entity.
+
+Required output:
+{{
+  "entities_to_add": [
+    {{
+      "name": "string",
+      "description": "string",
+      "attributes": []
+    }}
+  ],
+  "relationships_to_add_or_update": [
+    {{
+      "from_entity": "string",
+      "to_entity": "string",
+      "cardinality": "1:1 | 1:N | M:N",
+      "description": "string",
+      "label": "string"
+    }}
+  ]
 }}
 """.strip()
 

@@ -1,5 +1,8 @@
 import re
 
+#editd by mani
+LOGICAL_COLUMN_MARKER = "\u200b"
+
 
 def clean_name(name: str) -> str:
     if not name:
@@ -127,7 +130,7 @@ def build_logical_mermaid(logical_model):
                 column_name in primary_keys,
                 column_name in foreign_keys,
             )
-            lines.append(f"    column {column_name}{key_flags}")
+            lines.append(f"    {LOGICAL_COLUMN_MARKER} {column_name}{key_flags}")
         lines.append("  }")
 
     for table in logical_model.tables:

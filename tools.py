@@ -18,20 +18,22 @@ try:
     from config import get_openai_api_key, get_openai_model
     from prompts import (
         get_conceptual_prompt,
+        get_conceptual_update_prompt,
         get_logical_prompt,
         get_physical_prompt,
     )
     from rag import get_relevant_context
-    from schemas import ConceptualModel, LogicalModel, PhysicalModel, PhysicalModelTemplate  #added by swamy
+    from schemas import ConceptualModel, ConceptualUpdatePatch, LogicalModel, PhysicalModel, PhysicalModelTemplate  #added by swamy
 except ImportError:  # pragma: no cover
     from .config import get_openai_api_key, get_openai_model
     from .prompts import (
         get_conceptual_prompt,
+        get_conceptual_update_prompt,
         get_logical_prompt,
         get_physical_prompt,
     )
     from .rag import get_relevant_context
-    from .schemas import ConceptualModel, LogicalModel, PhysicalModel, PhysicalModelTemplate  #added by swamy
+    from .schemas import ConceptualModel, ConceptualUpdatePatch, LogicalModel, PhysicalModel, PhysicalModelTemplate  #added by swamy
 
   
 
@@ -79,9 +81,9 @@ def _extract_context_entities(context: str) -> List[Dict[str, Any]]:
 
         match = re.match(
             r"Business concept:\s*(?P<term>[^.]+)\.\s*"
-            r"Canonical ER entity:\s*(?P<entity>[^.]+)\.\s*"
+            r"(?:Canonical ER entity|Canonical table):\s*(?P<entity>[^.]+)\.\s*"
             r"Definition:\s*(?P<definition>.+?)\.\s*"
-            r"Business usage:",
+            r"(?:Business usage|Business purpose):",
             line,
         )
         if not match:
@@ -126,6 +128,42 @@ def _extract_context_entities(context: str) -> List[Dict[str, Any]]:
         terms = (match.group("terms") or "").strip()
         if terms and entity["name"] == _business_name_from_canonical(canonical_entity):
             entity["name"] = terms.split(",")[0].strip()
+
+    for line in context.splitlines():
+        line = line.strip()
+        if not line.startswith("Table summary:"):
+            continue
+
+        match = re.match(
+            r"Table summary:\s*(?P<entity>[A-Z0-9_]+)\s+represents\s+(?P<term>[^.]+)\.\s*",
+            line,
+        )
+        if not match:
+            continue
+
+        canonical_entity = match.group("entity").strip()
+        if not _is_canonical_entity_name(canonical_entity):
+            continue
+
+        definition_match = re.search(
+            r"Business attributes:\s*(?P<attributes>.+?)\.\s*(?:Examples:|$)",
+            line,
+        )
+        attributes = []
+        if definition_match:
+            for attribute_part in definition_match.group("attributes").split(";"):
+                attribute_name = attribute_part.strip().split(" means ", 1)[0].strip()
+                if attribute_name:
+                    attributes.append(attribute_name)
+
+        entities_by_canonical.setdefault(
+            canonical_entity,
+            {
+                "name": match.group("term").strip(),
+                "description": f"Business entity represented by {canonical_entity} in glossary context.",
+                "attributes": attributes,
+            },
+        )
 
     return list(entities_by_canonical.values())
 
@@ -186,7 +224,184 @@ def _extract_context_relationships(context: str, entities: List[Dict[str, Any]])
                 "label": "relates to",
             }
 
+    for line in context.splitlines():
+        line = line.strip()
+        if not line.startswith("Relationship rule:"):
+            continue
+
+        match = re.match(
+            r"Relationship rule:\s*(?P<from_entity>[A-Z0-9_]+)\s+to\s+(?P<to_entity>[A-Z0-9_]+)\.\s*"
+            r"Cardinality:\s*(?P<cardinality>[^.]+)\.\s*"
+            r"Business rule:\s*(?P<description>.+)",
+            line,
+        )
+        if not match:
+            continue
+
+        from_entity = business_name_by_canonical.get(match.group("from_entity").strip(), _business_name_from_canonical(match.group("from_entity").strip()))
+        to_entity = business_name_by_canonical.get(match.group("to_entity").strip(), _business_name_from_canonical(match.group("to_entity").strip()))
+        cardinality = match.group("cardinality").strip().replace("1:M", "1:N")
+        relationship_key = (from_entity, to_entity)
+        relationships_by_key[relationship_key] = {
+            "from_entity": from_entity,
+            "to_entity": to_entity,
+            "cardinality": cardinality,
+            "description": match.group("description").strip(),
+            "label": "relates to",
+        }
+
     return list(relationships_by_key.values())
+
+
+#editd by mani
+def _normalized_entity_key(entity_name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", entity_name.lower())
+
+
+#editd by mani
+def _relationship_exists(
+    relationships: List[Dict[str, Any]],
+    from_entity: str,
+    to_entity: str,
+) -> bool:
+    target_pair = {
+        _normalized_entity_key(from_entity),
+        _normalized_entity_key(to_entity),
+    }
+    for relationship in relationships:
+        relationship_pair = {
+            _normalized_entity_key(relationship.get("from_entity", "")),
+            _normalized_entity_key(relationship.get("to_entity", "")),
+        }
+        if relationship_pair == target_pair:
+            return True
+    return False
+
+
+#editd by mani
+def _conceptual_entity_degrees(
+    entities: List[Dict[str, Any]],
+    relationships: List[Dict[str, Any]],
+) -> Dict[str, int]:
+    degrees = {
+        _normalized_entity_key(entity.get("name", "")): 0
+        for entity in entities
+    }
+    for relationship in relationships:
+        from_key = _normalized_entity_key(relationship.get("from_entity", ""))
+        to_key = _normalized_entity_key(relationship.get("to_entity", ""))
+        if from_key in degrees:
+            degrees[from_key] += 1
+        if to_key in degrees:
+            degrees[to_key] += 1
+    return degrees
+
+
+#editd by mani
+def _preferred_connection_target(
+    orphan_entity_name: str,
+    entities: List[Dict[str, Any]],
+    relationships: List[Dict[str, Any]],
+) -> str | None:
+    orphan_key = _normalized_entity_key(orphan_entity_name)
+    degrees = _conceptual_entity_degrees(entities, relationships)
+    preferred_names = ["Customer", "Facility", "Loan", "Account", "Loan Account"]
+
+    for preferred_name in preferred_names:
+        for entity in entities:
+            entity_name = entity.get("name", "")
+            if _normalized_entity_key(entity_name) == orphan_key:
+                continue
+            if _normalized_entity_key(entity_name) == _normalized_entity_key(preferred_name):
+                return entity_name
+
+    connected_entities = [
+        entity.get("name", "")
+        for entity in entities
+        if _normalized_entity_key(entity.get("name", "")) != orphan_key
+        and degrees.get(_normalized_entity_key(entity.get("name", "")), 0) > 0
+    ]
+    if connected_entities:
+        return connected_entities[0]
+
+    for entity in entities:
+        entity_name = entity.get("name", "")
+        if _normalized_entity_key(entity_name) != orphan_key:
+            return entity_name
+    return None
+
+
+#editd by mani
+def ensure_connected_conceptual_model(
+    conceptual_output: Dict[str, Any],
+    context: str = "",
+) -> Dict[str, Any]:
+    entities = list(conceptual_output.get("entities", []))
+    relationships = [dict(relationship) for relationship in conceptual_output.get("relationships", [])]
+
+    if len(entities) <= 1:
+        normalized_output = dict(conceptual_output)
+        normalized_output["relationships"] = relationships
+        return normalized_output
+
+    inferred_relationships = _extract_context_relationships(context, entities) if context else []
+
+    while True:
+        degrees = _conceptual_entity_degrees(entities, relationships)
+        orphan_entities = [
+            entity for entity in entities
+            if degrees.get(_normalized_entity_key(entity.get("name", "")), 0) == 0
+        ]
+        if not orphan_entities:
+            break
+
+        added_relationship = False
+        for orphan_entity in orphan_entities:
+            orphan_name = orphan_entity.get("name", "")
+
+            for inferred_relationship in inferred_relationships:
+                inferred_from = inferred_relationship.get("from_entity", "")
+                inferred_to = inferred_relationship.get("to_entity", "")
+                if _normalized_entity_key(orphan_name) not in {
+                    _normalized_entity_key(inferred_from),
+                    _normalized_entity_key(inferred_to),
+                }:
+                    continue
+                if _relationship_exists(relationships, inferred_from, inferred_to):
+                    continue
+                relationships.append(inferred_relationship)
+                added_relationship = True
+                break
+
+            if added_relationship:
+                break
+
+            target_entity = _preferred_connection_target(orphan_name, entities, relationships)
+            if not target_entity or _relationship_exists(relationships, target_entity, orphan_name):
+                continue
+
+            relationships.append(
+                {
+                    "from_entity": target_entity,
+                    "to_entity": orphan_name,
+                    "cardinality": "1:N" if _normalized_entity_key(target_entity) in {
+                        _normalized_entity_key("Customer"),
+                        _normalized_entity_key("Facility"),
+                        _normalized_entity_key("Loan"),
+                    } else "M:N",
+                    "description": f"{target_entity} is associated with {orphan_name} in the conceptual business model.",
+                    "label": "relates to",
+                }
+            )
+            added_relationship = True
+            break
+
+        if not added_relationship:
+            break
+
+    normalized_output = dict(conceptual_output)
+    normalized_output["relationships"] = relationships
+    return normalized_output
 
 
 def _fallback_conceptual_model(requirement: str, context: str) -> Dict[str, Any]:
@@ -206,6 +421,83 @@ def _fallback_conceptual_model(requirement: str, context: str) -> Dict[str, Any]
         ],
         "conceptual_summary": "This draft identifies business entities and high-level relationships using retrieved glossary context only.",
         "diagram_description": "ER diagram derived from glossary-grounded conceptual entities and inferred relationships.",
+    }
+
+
+#editd by mani
+def _title_case_entity_name(entity_name: str) -> str:
+    parts = re.split(r"[_\s]+", entity_name.strip())
+    return "_".join(part.capitalize() for part in parts if part)
+
+
+#editd by mani
+def _fallback_conceptual_update_patch(
+    conceptual_output: Dict[str, Any],
+    instruction: str,
+) -> Dict[str, Any]:
+    existing_entities = conceptual_output.get("entities", [])
+    normalized_entity_lookup = {
+        re.sub(r"[^a-z0-9]", "", entity.get("name", "").lower()): entity.get("name", "")
+        for entity in existing_entities
+    }
+    instruction_text = instruction.lower()
+    entity_mentions = []
+
+    for entity in existing_entities:
+        entity_name = entity.get("name", "")
+        aliases = {
+            entity_name.lower(),
+            entity_name.lower().replace("_", " "),
+            entity_name.lower().replace(" ", "_"),
+        }
+        positions = [
+            instruction_text.find(alias.replace("_", " "))
+            for alias in aliases
+            if instruction_text.find(alias.replace("_", " ")) >= 0
+        ]
+        for position in positions:
+            entity_mentions.append((position, entity_name, False))
+
+    for match in re.finditer(r"new\s+(?:table|entity)\s+([a-zA-Z][a-zA-Z0-9_ ]+)", instruction, re.IGNORECASE):
+        raw_name = match.group(1).strip()
+        raw_name = re.split(r"\s+(?:which|that|and|with)\b", raw_name, maxsplit=1)[0].strip(" ,.")
+        normalized_name = re.sub(r"[^a-z0-9]", "", raw_name.lower())
+        if normalized_name and normalized_name not in normalized_entity_lookup:
+            entity_mentions.append((match.start(1), _title_case_entity_name(raw_name), True))
+
+    entity_mentions.sort(key=lambda item: item[0])
+    entities_to_add = []
+    relationships_to_add_or_update = []
+    ordered_entities = [entity_name for _, entity_name, _ in entity_mentions]
+
+    seen_new_entities = set()
+    for _, entity_name, is_new in entity_mentions:
+        if is_new and entity_name not in seen_new_entities:
+            seen_new_entities.add(entity_name)
+            entities_to_add.append(
+                {
+                    "name": entity_name,
+                    "description": f"Business entity added from conceptual update instruction for {entity_name}.",
+                    "attributes": [],
+                }
+            )
+
+    for left_entity, right_entity in zip(ordered_entities, ordered_entities[1:]):
+        if left_entity == right_entity:
+            continue
+        relationships_to_add_or_update.append(
+            {
+                "from_entity": left_entity,
+                "to_entity": right_entity,
+                "cardinality": "M:N",
+                "description": f"{left_entity} is directly related to {right_entity} at the conceptual business level.",
+                "label": "relates to",
+            }
+        )
+
+    return {
+        "entities_to_add": entities_to_add,
+        "relationships_to_add_or_update": relationships_to_add_or_update,
     }
 
 
@@ -542,7 +834,7 @@ def _generate_json(prompt: str, system_message: str) -> Dict[str, Any]:
     return _extract_json(response.output_text)
 
 
-def rag_context_core(requirement: str, k: int = 5) -> str:
+def rag_context_core(requirement: str, k: int = 12) -> str:
     return get_relevant_context(requirement, k=k)
 
 
@@ -560,9 +852,27 @@ def conceptual_model_core(requirement: str) -> Dict[str, Any]:
             conceptual.requirement = requirement
         if not conceptual.rag_context_used:
             conceptual.rag_context_used = context
-        return conceptual.model_dump()
+        return ensure_connected_conceptual_model(conceptual.model_dump(), context)
     except Exception:
-        return _fallback_conceptual_model(requirement, context)
+        return ensure_connected_conceptual_model(_fallback_conceptual_model(requirement, context), context)
+
+
+#editd by mani
+def conceptual_update_patch_core(
+    conceptual_payload: Dict[str, Any],
+    instruction: str,
+) -> Dict[str, Any]:
+    prompt = get_conceptual_update_prompt(conceptual_payload, instruction)
+    try:
+        patch = ConceptualUpdatePatch.model_validate(
+            _generate_json(
+                prompt,
+                "You are a senior enterprise data architect specializing in conceptual model change requests. Return only a minimal JSON patch for the requested conceptual update.",
+            )
+        )
+        return patch.model_dump()
+    except Exception:
+        return _fallback_conceptual_update_patch(conceptual_payload, instruction)
 
 
 def logical_model_core(conceptual_payload: Dict[str, Any]) -> Dict[str, Any]:
