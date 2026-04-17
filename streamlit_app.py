@@ -8,7 +8,7 @@ API = "http://127.0.0.1:8000"
 st.set_page_config(page_title="AI Data Modeling Workflow", layout="wide")
 
 st.title("AI Data Modeling Workflow")
-st.caption("Conceptual -> Review -> Approve -> Logical + Physical")
+st.caption("Requirement -> Conceptual review -> Update conceptual -> Approve -> Logical and Physical")
 
 DEFAULTS = {
     "artifact_id": None,
@@ -19,7 +19,9 @@ DEFAULTS = {
     "conceptual_url": None,
     "logical_url": None,
     "physical_url": None,
+    "agent_final_answer": "",
 }
+
 
 for key, value in DEFAULTS.items():
     if key not in st.session_state:
@@ -63,19 +65,18 @@ def show_json(data, title: str) -> None:
     st.write(data)
 
 
-def show_diagram(title: str, url: str | None) -> None:
-    st.markdown(f"### {title}")
-
+def show_diagram_button(title: str, url: str | None) -> None:
+    st.subheader(title)
     if not url:
-        st.info("Diagram not available.")
+        st.info("Diagram is not available.")
         return
-
-    st.link_button(f"Open {title}", url)
-    st.components.v1.iframe(url, height=500, scrolling=True)
+    st.link_button(f"View {title}", url, use_container_width=False)
 
 
-def _store_orchestrate_response(data: dict) -> None:
-    st.session_state.artifact_id = data.get("conceptual_artifact_id", st.session_state.artifact_id)
+def store_orchestrate_response(data: dict) -> None:
+    if data.get("conceptual_artifact_id"):
+        st.session_state.artifact_id = data["conceptual_artifact_id"]
+
     st.session_state.conceptual_status = data.get("conceptual_status")
     st.session_state.conceptual = data.get("conceptual_output")
     st.session_state.logical = data.get("logical_output")
@@ -83,15 +84,20 @@ def _store_orchestrate_response(data: dict) -> None:
     st.session_state.conceptual_url = data.get("conceptual_view_url")
     st.session_state.logical_url = data.get("logical_view_url")
     st.session_state.physical_url = data.get("physical_view_url")
+    st.session_state.agent_final_answer = data.get("agent_final_answer", "")
 
 
+st.header("Enter Business Requirement")
 requirement = st.text_area(
-    "Enter Business Requirement",
-    height=180,
-    placeholder="Example: Build a banking data model with customer, account, loan, transaction and repayment entities.",
+    "Requirement",
+    height=220,
+    placeholder="Example: Design a full conceptual, logical, and physical data model for the loan credit risk domain.",
+    disabled=st.session_state.artifact_id is not None,
+    label_visibility="collapsed",
 )
 
-if st.button("Generate Conceptual"):
+generate_disabled = st.session_state.artifact_id is not None
+if st.button("Generate Conceptual Draft", disabled=generate_disabled):
     if not requirement.strip():
         st.warning("Please enter requirement.")
         st.stop()
@@ -103,38 +109,48 @@ if st.button("Generate Conceptual"):
         st.error(response.text)
         st.stop()
 
-    _store_orchestrate_response(response.json())
+    store_orchestrate_response(response.json())
     st.success("Conceptual draft generated.")
     st.rerun()
+
+if st.session_state.artifact_id:
+    st.caption(f"artifact_id: {st.session_state.artifact_id}")
+    st.caption("This artifact_id stays the same for the full workflow until the page is refreshed.")
+
+if st.session_state.agent_final_answer:
+    st.info(st.session_state.agent_final_answer)
 
 
 if st.session_state.conceptual:
     st.divider()
-    st.header("Step 2: Review Conceptual Model")
-    if st.session_state.artifact_id:
-        st.caption(f"Artifact ID: {st.session_state.artifact_id}")
+    st.header("Conceptual Review")
+    conceptual_json_tab, conceptual_diagram_tab = st.tabs(["Conceptual JSON", "Conceptual Diagram"])
 
-    tab1, tab2 = st.tabs(["JSON", "Diagram"])
+    with conceptual_json_tab:
+        show_json(st.session_state.conceptual, "Conceptual JSON")
 
-    with tab1:
-        show_json(st.session_state.conceptual, "Conceptual Model")
-
-    with tab2:
-        show_diagram("Conceptual Diagram", st.session_state.conceptual_url)
+    with conceptual_diagram_tab:
+        show_diagram_button("Conceptual Diagram", st.session_state.conceptual_url)
 
     if st.session_state.conceptual_status != "approved":
-        st.subheader("Add Changes")
-        change_request = st.text_input(
-            "Example: Connect Customer to Account one to many",
+        st.divider()
+        st.header("Update Conceptual")
+        change_request = st.text_area(
+            "Conceptual update request",
             key="conceptual_change_request",
+            height=120,
+            placeholder="Example: Create a direct connection between Loan and Customer_KYC, and add a new entity Customer_CIBIL connected to Customer_KYC.",
         )
 
-        col1, col2 = st.columns(2)
+        update_col, approve_col = st.columns(2)
 
-        with col1:
-            if st.button("Apply Conceptual Changes"):
+        with update_col:
+            if st.button("Apply Conceptual Update", use_container_width=True):
+                if not st.session_state.artifact_id:
+                    st.error("No conceptual artifact found. Generate the conceptual draft first.")
+                    st.stop()
                 if not change_request.strip():
-                    st.warning("Please describe the change.")
+                    st.warning("Please describe the conceptual update.")
                     st.stop()
 
                 with st.spinner("Updating conceptual draft..."):
@@ -149,13 +165,17 @@ if st.session_state.conceptual:
                     st.error(response.text)
                     st.stop()
 
-                _store_orchestrate_response(response.json())
+                store_orchestrate_response(response.json())
                 st.success("Conceptual draft updated.")
                 st.rerun()
 
-        with col2:
-            if st.button("Approve Conceptual"):
-                with st.spinner("Generating logical and physical models..."):
+        with approve_col:
+            if st.button("Approve Conceptual", use_container_width=True):
+                if not st.session_state.artifact_id:
+                    st.error("No conceptual artifact found. Generate the conceptual draft first.")
+                    st.stop()
+
+                with st.spinner("Generating logical and physical outputs..."):
                     response = api_post(
                         {
                             "artifact_id": st.session_state.artifact_id,
@@ -167,43 +187,41 @@ if st.session_state.conceptual:
                     st.error(response.text)
                     st.stop()
 
-                _store_orchestrate_response(response.json())
+                store_orchestrate_response(response.json())
                 st.success("Conceptual draft approved.")
                 st.rerun()
 
 
 if st.session_state.logical:
     st.divider()
-    st.header("Step 3: Logical Model")
+    st.header("Logical Review")
+    logical_json_tab, logical_diagram_tab = st.tabs(["Logical JSON", "Logical Diagram"])
 
-    tab3, tab4 = st.tabs(["JSON", "Diagram"])
+    with logical_json_tab:
+        show_json(st.session_state.logical, "Logical JSON")
 
-    with tab3:
-        show_json(st.session_state.logical, "Logical Model")
-
-    with tab4:
-        show_diagram("Logical Diagram", st.session_state.logical_url)
+    with logical_diagram_tab:
+        show_diagram_button("Logical Diagram", st.session_state.logical_url)
 
 
 if st.session_state.physical:
     st.divider()
-    st.header("Step 4: Physical Model")
+    st.header("Physical Review")
+    physical_json_tab, physical_diagram_tab = st.tabs(["Physical JSON", "Physical Diagram"])
 
-    tab5, tab6 = st.tabs(["JSON", "Diagram"])
-
-    with tab5:
-        show_json(st.session_state.physical, "Physical Model")
+    with physical_json_tab:
+        show_json(st.session_state.physical, "Physical JSON")
 
         ddl = None
         if isinstance(st.session_state.physical, dict):
             ddl = st.session_state.physical.get("ddl")
 
         if ddl:
-            st.subheader("DDL Scripts")
+            st.subheader("DDL")
             if isinstance(ddl, list):
                 st.code("\n".join(ddl), language="sql")
             else:
                 st.code(str(ddl), language="sql")
 
-    with tab6:
-        show_diagram("Physical Diagram", st.session_state.physical_url)
+    with physical_diagram_tab:
+        show_diagram_button("Physical Diagram", st.session_state.physical_url)
