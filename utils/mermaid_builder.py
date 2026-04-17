@@ -17,10 +17,15 @@ def normalize_entity(name: str) -> str:
 
 
 def normalize_data_type(data_type: str, default_type: str = "string") -> str:
-    cleaned_type = clean_name(data_type)
-    if not cleaned_type:
+    if not data_type:
         return default_type
-    return cleaned_type.lower()
+
+    data_type = data_type.strip().lower()
+    data_type = data_type.replace("/", "_")
+    data_type = re.sub(r"[^a-z0-9]+", "_", data_type)
+    data_type = re.sub(r"_+", "_", data_type).strip("_")
+
+    return data_type or default_type
 
 
 def format_key_flags(is_primary_key: bool, is_foreign_key: bool) -> str:
@@ -87,11 +92,6 @@ def build_mermaid(conceptual_model):
     for entity in conceptual_model.entities:
         entity_name = normalize_entity(entity.name)
         lines.append(f"  {entity_name} {{")
-
-        for attr in entity.attributes:
-            attr_name = clean_name(attr)
-            lines.append(f"    string {attr_name}")
-
         lines.append("  }")
 
     
@@ -123,12 +123,11 @@ def build_logical_mermaid(logical_model):
         lines.append(f"  {table_name} {{")
         for column in table.columns:
             column_name = clean_name(column.name).lower()
-            column_type = normalize_data_type(column.type)
             key_flags = format_key_flags(
                 column_name in primary_keys,
                 column_name in foreign_keys,
             )
-            lines.append(f"    {column_type} {column_name}{key_flags}")
+            lines.append(f"    column {column_name}{key_flags}")
         lines.append("  }")
 
     for table in logical_model.tables:
@@ -159,7 +158,7 @@ def build_physical_mermaid(physical_model):
         lines.append(f"  {table_name} {{")
         for column in table.columns:
             column_name = clean_name(column.name).lower()
-            column_type = normalize_data_type(column.column_data_type)
+            column_type = normalize_data_type(column.column_data_type, default_type="column")
             key_flags = format_key_flags(
                 column_name in primary_keys,
                 column_name in foreign_keys,
