@@ -193,6 +193,12 @@ st.markdown(
         color: rgba(229, 239, 255, 0.98);
         box-shadow: 0 0 0 0.2rem rgba(43, 108, 255, 0.14);
     }
+    .workflow-step.completed.current {
+        background: rgba(35, 182, 120, 0.16);
+        border-color: rgba(35, 182, 120, 0.34);
+        color: rgba(188, 255, 220, 0.98);
+        box-shadow: 0 0 0 0.2rem rgba(35, 182, 120, 0.12);
+    }
     .workflow-step-index {
         display: inline-flex;
         align-items: center;
@@ -740,6 +746,10 @@ if "current_project_id" not in st.session_state:
     st.session_state.current_project_id = None
 if "current_project_name" not in st.session_state:
     st.session_state.current_project_name = None
+if "current_project_from_history" not in st.session_state:
+    st.session_state.current_project_from_history = False
+if "project_name_input" not in st.session_state:
+    st.session_state.project_name_input = ""
 
 
 def reset_workflow_state() -> None:
@@ -1178,6 +1188,26 @@ def save_current_project(
     write_project(project)
 
 
+#editd by mani
+def update_current_project_name(project_name: str) -> None:
+    clean_project_name = project_name.strip()
+    project_id = st.session_state.get("current_project_id")
+
+    if not clean_project_name or not project_id:
+        return
+    if clean_project_name == st.session_state.get("current_project_name"):
+        return
+
+    project = read_project(project_id)
+    if project is None:
+        return
+
+    project["project_name"] = clean_project_name
+    project["updated_at"] = current_timestamp()
+    st.session_state.current_project_name = clean_project_name
+    write_project(project)
+
+
 def open_project(project: dict) -> None:
     st.session_state.current_project_id = project["project_id"]
     st.session_state.current_project_name = project.get("project_name", "Untitled Project")
@@ -1193,6 +1223,8 @@ def open_project(project: dict) -> None:
     load_workflow_state(state)
     st.session_state.current_project_id = project["project_id"]
     st.session_state.current_project_name = project.get("project_name", "Untitled Project")
+    st.session_state.current_project_from_history = True
+    st.session_state.project_name_input = st.session_state.current_project_name
     st.session_state.app_page = "main"
     st.session_state.show_project_picker = False
 
@@ -1202,6 +1234,8 @@ def start_new_project(project_name: str = "") -> None:
     project = create_project(project_name)
     st.session_state.current_project_id = project["project_id"]
     st.session_state.current_project_name = project["project_name"]
+    st.session_state.current_project_from_history = False
+    st.session_state.project_name_input = project_name.strip()
     st.session_state.app_page = "main"
     st.session_state.show_project_picker = False
 
@@ -1245,15 +1279,13 @@ def render_landing_page() -> None:
     usecase_1_col, usecase_2_col, old_repo_col, docs_col = st.columns([1, 1, 1.45, 0.8])
 
     with usecase_1_col:
-        if st.button("Credit Risk", use_container_width=True):
+        if st.button("Core Banking", use_container_width=True):
             start_new_project()
-            st.session_state.supportive_requirement_input = USE_CASE_REQUIREMENTS["usecase_1"]
             st.rerun()
 
     with usecase_2_col:
         if st.button("Loan", use_container_width=True):
             start_new_project()
-            st.session_state.supportive_requirement_input = USE_CASE_REQUIREMENTS["usecase_2"]
             st.rerun()
 
     with old_repo_col:
@@ -1568,6 +1600,17 @@ with st.sidebar:
 
 if selected_product == "Conceptual":
     st.header("Enter Business Requirement")
+
+    if st.session_state.get("current_project_from_history"):
+        st.caption(f"Project: {st.session_state.current_project_name or 'Untitled Project'}")
+    else:
+        project_name_value = st.text_input(
+            "Project Name",
+            key="project_name_input",
+            placeholder="Enter project name",
+        )
+        update_current_project_name(project_name_value)
+
     upload_key = f"brd_upload_{st.session_state.brd_upload_reset}"
     attached_brd = st.session_state.get(upload_key)
 
@@ -1619,10 +1662,10 @@ if selected_product == "Conceptual":
         generate_clicked = st.button("Run", disabled=generate_disabled, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='chat-input-helper'>Use + to attach a BRD .docx. Attachment text and prompt are combined as the requirement.</div>",
-        unsafe_allow_html=True,
-    )
+    # st.markdown(
+    #     "<div class='chat-input-helper'>Use + to attach a BRD .docx. Attachment text and prompt are combined as the requirement.</div>",
+    #     unsafe_allow_html=True,
+    # )
 
     if generate_clicked:
         brd_text = ""
