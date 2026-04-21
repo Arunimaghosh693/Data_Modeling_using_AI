@@ -1,8 +1,11 @@
 import base64
+import json
 import html
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 import xml.etree.ElementTree as ET
+import uuid
 import zipfile
 
 import requests
@@ -10,6 +13,47 @@ import streamlit as st
 
 API = "http://127.0.0.1:8000"
 LOGO_PATH = Path(__file__).with_name("kpmg-logo-png_seeklogo-290229.png")
+EXAMPLE_IMAGE_PATH = Path(__file__).with_name("example.jpeg")
+PROJECT_REPOSITORY_PATH = Path(__file__).with_name("project_repository")
+PROJECT_STORE_FILE = PROJECT_REPOSITORY_PATH / "history.json"
+LEGACY_PROJECT_STORE_FILE = PROJECT_REPOSITORY_PATH / "projects.json"
+USE_CASE_REQUIREMENTS = {
+    "usecase_1": "Design a full conceptual, logical, and physical data model for the loan credit risk domain.",
+    "usecase_2": "Create a data model for customer, facility, loan, collateral, default, recovery, and provision reporting.",
+}
+LANDING_TOOL_CARDS = [
+    {
+        "phase": "Phase 1:",
+        "title": "Conceptual",
+        "description": "Business-level ER model with core entities and table-to-table relationships for review.",
+    },
+    {
+        "phase": "Phase 2:",
+        "title": "Logical",
+        "description": "Low-level structure with tables, columns, primary keys, foreign keys, and relationships.",
+    },
+    {
+        "phase": "Phase 3:",
+        "title": "Physical",
+        "description": "Developer-ready database design with datatypes, constraints, indexes, ER diagram, and DDL.",
+    },
+    {
+        "phase": "Phase 4:",
+        "title": "Upcoming",
+        "description": "Reserved for Semantic Layer, Ontology, and Dimensional Modeling workflows.",
+    },
+]
+TECH_USED = [
+    "Python",
+    "FastAPI",
+    "Streamlit",
+    "OpenAI",
+    "LangGraph",
+    "LangChain",
+    "FAISS",
+    "Sentence Transformers",
+    "Mermaid.js",
+]
 DATA_PRODUCTS = [
     "Conceptual",
     "Logical",
@@ -19,7 +63,7 @@ DATA_PRODUCTS = [
     "Dimensional Modeling",
 ]
 
-st.set_page_config(page_title="AI Data Modeling Workflow", layout="wide")
+st.set_page_config(page_title="OmniModel.AI - AI Data Fabric Application", layout="wide")
 
 def render_app_logo() -> None:
     if not LOGO_PATH.exists():
@@ -96,7 +140,7 @@ def render_app_logo() -> None:
         <div class="app-fixed-header-bg"></div>
         <div class="app-fixed-header">
             <img src="data:image/png;base64,{encoded_logo}" alt="KPMG logo" />
-            <h1 class="app-fixed-header-title">AI Data Modeling Workflow</h1>
+            <h1 class="app-fixed-header-title">OmniModel.AI - AI Data Fabric Application</h1>
         </div>
         """,
         unsafe_allow_html=True,
@@ -166,6 +210,180 @@ st.markdown(
         color: rgba(250, 250, 250, 0.34);
         font-size: 0.95rem;
         font-weight: 700;
+    }
+    .landing-hero {
+        max-width: 86rem;
+        padding: 1rem 0 0.75rem;
+    }
+    .landing-hero h2 {
+        margin: 0;
+        color: rgba(250, 250, 250, 0.98);
+        font-size: clamp(2.3rem, 4vw, 4.4rem);
+        line-height: 1.02;
+        letter-spacing: -0.04em;
+    }
+    .landing-hero p {
+        max-width: 58rem;
+        margin: 1rem 0 0;
+        color: rgba(250, 250, 250, 0.62);
+        font-size: 1.02rem;
+        line-height: 1.6;
+    }
+    .landing-cta-panel {
+        margin: 1.35rem 0 1.5rem;
+        padding: 1rem;
+        border-radius: 1.35rem;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 20px 56px rgba(0, 0, 0, 0.2);
+    }
+    .landing-section-title {
+        margin: 0.4rem 0 0.85rem;
+        color: rgba(250, 250, 250, 0.92);
+        font-size: 1.05rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+    }
+    .landing-card {
+        min-height: 13rem;
+        padding: 1.25rem;
+        border-radius: 1.25rem;
+        background:
+            radial-gradient(circle at 10% 0%, rgba(43, 108, 255, 0.24), transparent 32%),
+            rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 20px 56px rgba(0, 0, 0, 0.24);
+    }
+    .landing-card h3 {
+        margin: 0;
+        color: rgba(250, 250, 250, 0.96);
+        font-size: 1.25rem;
+        line-height: 1.2;
+    }
+    .landing-card p {
+        margin: 0.75rem 0 0;
+        color: rgba(250, 250, 250, 0.58);
+        font-size: 0.92rem;
+        line-height: 1.45;
+    }
+    .landing-card-count {
+        display: block;
+        margin-top: 1.2rem;
+        text-align: center;
+        color: rgba(188, 255, 220, 0.98);
+        font-size: 3rem;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.04em;
+    }
+    .landing-card-note {
+        display: block;
+        margin-top: 0.55rem;
+        text-align: center;
+        color: rgba(250, 250, 250, 0.58);
+        font-size: 0.9rem;
+        line-height: 1.35;
+    }
+    .landing-tool-card {
+        height: 15.5rem;
+        padding: 1.1rem;
+        border-radius: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        background:
+            linear-gradient(140deg, rgba(18, 30, 52, 0.94), rgba(18, 22, 30, 0.78)),
+            radial-gradient(circle at 90% 10%, rgba(255, 75, 82, 0.18), transparent 30%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 20px 56px rgba(0, 0, 0, 0.24);
+    }
+    .landing-tool-card h3 {
+        margin: 0.2rem 0 0;
+        color: rgba(250, 250, 250, 0.96);
+        font-size: 1.2rem;
+        line-height: 1.15;
+    }
+    .landing-tool-phase {
+        display: block;
+        color: rgba(188, 255, 220, 0.94);
+        font-size: 0.88rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .landing-tool-card p {
+        margin: 1.05rem 0 0;
+        color: rgba(250, 250, 250, 0.62);
+        font-size: 0.86rem;
+        line-height: 1.5;
+    }
+    .landing-tool-card.is-upcoming {
+        background:
+            linear-gradient(140deg, rgba(33, 34, 40, 0.86), rgba(17, 20, 27, 0.78)),
+            radial-gradient(circle at 90% 10%, rgba(255, 255, 255, 0.08), transparent 30%);
+        border-style: dashed;
+    }
+    .landing-example-section {
+        margin-top: 2.8rem;
+    }
+    .landing-example-frame {
+        padding: 0.8rem;
+        border-radius: 1.35rem;
+        background:
+            radial-gradient(circle at 8% 0%, rgba(43, 108, 255, 0.14), transparent 30%),
+            rgba(255, 255, 255, 0.035);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        box-shadow: 0 20px 56px rgba(0, 0, 0, 0.2);
+        max-width: 54rem;
+        margin: 0 auto;
+    }
+    .landing-example-frame img {
+        display: block;
+        width: 100%;
+        max-height: 18rem;
+        object-fit: contain;
+        border-radius: 1rem;
+        background: rgba(0, 0, 0, 0.18);
+    }
+    .tech-stack-section {
+        margin-top: 3rem;
+        padding: 1rem 1.2rem;
+        border-radius: 1.35rem;
+        background:
+            radial-gradient(circle at 10% 0%, rgba(255, 75, 82, 0.12), transparent 30%),
+            rgba(255, 255, 255, 0.035);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        box-shadow: 0 20px 56px rgba(0, 0, 0, 0.18);
+    }
+    .tech-stack-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        align-items: center;
+    }
+    .tech-stack-label {
+        color: rgba(250, 250, 250, 0.92);
+        font-size: 0.95rem;
+        font-weight: 800;
+        margin-right: 0.25rem;
+    }
+    .tech-stack-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.35rem 0.55rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.07);
+        color: rgba(250, 250, 250, 0.68);
+        font-size: 0.78rem;
+        line-height: 1;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .project-picker {
+        margin-top: 1.25rem;
+        padding: 1.1rem;
+        border-radius: 1.1rem;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
     .chat-input-shell {
         margin-top: 1rem;
@@ -435,6 +653,7 @@ def render_workflow_stepper() -> None:
     conceptual_ready = st.session_state.get("conceptual") is not None
     update_or_approve_ready = (
         st.session_state.get("conceptual_updated", False)
+        or st.session_state.get("conceptual_approved", False)
         or st.session_state.get("conceptual_status") == "approved"
         or st.session_state.get("logical") is not None
         or st.session_state.get("physical") is not None
@@ -442,7 +661,8 @@ def render_workflow_stepper() -> None:
     logical_ready = st.session_state.get("logical") is not None
     physical_ready = st.session_state.get("physical") is not None
     logical_and_physical_ready = (
-        st.session_state.get("conceptual_status") == "approved"
+        st.session_state.get("conceptual_approved", False)
+        or st.session_state.get("conceptual_status") == "approved"
         or logical_ready
         or physical_ready
     )
@@ -485,7 +705,13 @@ def render_workflow_stepper() -> None:
     st.markdown("".join(html_parts), unsafe_allow_html=True)
 
 
-render_workflow_stepper()
+if "app_page" not in st.session_state:
+    st.session_state.app_page = "landing"
+if "show_project_picker" not in st.session_state:
+    st.session_state.show_project_picker = False
+
+if st.session_state.app_page == "main":
+    render_workflow_stepper()
 
 DEFAULTS = {
     "artifact_id": None,
@@ -500,6 +726,7 @@ DEFAULTS = {
     "logical_diagram_version": 0,
     "physical_diagram_version": 0,
     "conceptual_updated": False,
+    "conceptual_approved": False,
     "agent_final_answer": "",
     "brd_upload_reset": 0,
 }
@@ -508,6 +735,11 @@ DEFAULTS = {
 for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = value
+
+if "current_project_id" not in st.session_state:
+    st.session_state.current_project_id = None
+if "current_project_name" not in st.session_state:
+    st.session_state.current_project_name = None
 
 
 def reset_workflow_state() -> None:
@@ -556,6 +788,548 @@ def build_requirement_text(brd_text: str, supportive_text: str) -> str:
     return "\n\n".join(sections).strip()
 
 
+def current_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def ensure_project_repository() -> None:
+    PROJECT_REPOSITORY_PATH.mkdir(parents=True, exist_ok=True)
+
+
+def project_file_path(project_id: str) -> Path:
+    return PROJECT_REPOSITORY_PATH / f"{project_id}.json"
+
+
+def read_store_file(store_file: Path) -> dict:
+    if not store_file.exists():
+        return {}
+
+    try:
+        store = json.loads(store_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+    return store if isinstance(store, dict) else {}
+
+
+#editd by mani
+def normalize_project_for_history(project: dict) -> bool:
+    changed = False
+    timestamp = current_timestamp()
+
+    if not project.get("project_id"):
+        project["project_id"] = uuid.uuid4().hex
+        changed = True
+
+    if not project.get("project_name"):
+        project["project_name"] = project.get("name") or f"Project {timestamp}"
+        changed = True
+
+    if not project.get("created_at"):
+        project["created_at"] = project.get("updated_at") or timestamp
+        changed = True
+
+    if not project.get("updated_at"):
+        project["updated_at"] = project.get("created_at") or timestamp
+        changed = True
+
+    if not isinstance(project.get("chat_history"), list):
+        project["chat_history"] = []
+        changed = True
+
+    if not isinstance(project.get("state"), dict):
+        project["state"] = {}
+        changed = True
+
+    state = project["state"]
+    for state_key in (
+        "artifact_id",
+        "conceptual_url",
+        "logical_url",
+        "physical_url",
+    ):
+        if state.get(state_key) is not None:
+            state[state_key] = None
+            changed = True
+
+    if not isinstance(project.get("diagram_json"), dict):
+        project["diagram_json"] = diagram_json_from_state(project.get("state", {}))
+        changed = True
+    elif not project.get("diagram_json"):
+        project["diagram_json"] = diagram_json_from_state(project.get("state", {}))
+        changed = True
+
+    for layer_data in (project.get("diagram_json") or {}).values():
+        if isinstance(layer_data, dict) and layer_data.get("diagram_url") is not None:
+            layer_data["diagram_url"] = None
+            changed = True
+
+    return changed
+
+
+def read_project_store() -> dict:
+    ensure_project_repository()
+    projects = []
+    known_project_ids = set()
+    migrated_project = False
+
+    for store_file in (PROJECT_STORE_FILE, LEGACY_PROJECT_STORE_FILE):
+        store = read_store_file(store_file)
+        store_projects = store.get("projects") if isinstance(store, dict) else None
+        if not isinstance(store_projects, list):
+            continue
+
+        for project in store_projects:
+            if not isinstance(project, dict):
+                continue
+
+            project_id = project.get("project_id")
+            if not project_id:
+                normalize_project_for_history(project)
+                project_id = project.get("project_id")
+
+            if project_id in known_project_ids:
+                continue
+
+            projects.append(project)
+            known_project_ids.add(project_id)
+            if store_file == LEGACY_PROJECT_STORE_FILE:
+                migrated_project = True
+
+    if not PROJECT_STORE_FILE.exists() and not projects:
+        migrated_project = True
+
+    for project_path in PROJECT_REPOSITORY_PATH.glob("*.json"):
+        if project_path.name in {
+            PROJECT_STORE_FILE.name,
+            LEGACY_PROJECT_STORE_FILE.name,
+        }:
+            continue
+
+        try:
+            project = json.loads(project_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+
+        project_id = project.get("project_id") if isinstance(project, dict) else None
+        if project_id and project_id not in known_project_ids:
+            projects.append(project)
+            known_project_ids.add(project_id)
+            migrated_project = True
+
+    for project in projects:
+        if not isinstance(project, dict):
+            continue
+        if normalize_project_for_history(project):
+            migrated_project = True
+
+    store = {
+        "version": 2,
+        "updated_at": current_timestamp(),
+        "projects": projects,
+    }
+    if migrated_project or not PROJECT_STORE_FILE.exists():
+        write_project_store(store)
+
+    return store
+
+
+def write_project_store(store: dict) -> None:
+    ensure_project_repository()
+    store["updated_at"] = current_timestamp()
+    PROJECT_STORE_FILE.write_text(
+        json.dumps(store, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def read_project(project_id: str) -> dict | None:
+    store = read_project_store()
+    for project in store.get("projects", []):
+        if project.get("project_id") == project_id:
+            return project
+
+    project_path = project_file_path(project_id)
+    if not project_path.exists():
+        return None
+
+    try:
+        project = json.loads(project_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+    if project.get("project_id"):
+        normalize_project_for_history(project)
+        store.setdefault("projects", []).append(project)
+        write_project_store(store)
+
+    return project
+
+
+def write_project(project: dict) -> None:
+    normalize_project_for_history(project)
+    store = read_project_store()
+    projects = store.setdefault("projects", [])
+    project_written = False
+
+    for index, existing_project in enumerate(projects):
+        if existing_project.get("project_id") == project["project_id"]:
+            projects[index] = project
+            project_written = True
+            break
+
+    if not project_written:
+        projects.append(project)
+
+    write_project_store(store)
+
+
+def list_saved_projects() -> list[dict]:
+    store = read_project_store()
+    projects = [
+        project
+        for project in store.get("projects", [])
+        if isinstance(project, dict)
+        and project.get("project_id")
+        and project_has_saved_content(project)
+    ]
+
+    return sorted(projects, key=lambda item: item.get("updated_at", ""), reverse=True)
+
+
+def project_has_saved_content(project: dict) -> bool:
+    if project.get("chat_history"):
+        return True
+
+    state = project.get("state", {})
+    if isinstance(state, dict) and any(
+        state.get(key) is not None
+        for key in (
+            "conceptual",
+            "logical",
+            "physical",
+        )
+    ):
+        return True
+
+    diagram_json = project.get("diagram_json", {})
+    if isinstance(diagram_json, dict):
+        return any(
+            isinstance(layer_data, dict)
+            and layer_data.get("model_json") is not None
+            for layer_data in diagram_json.values()
+        )
+
+    return False
+
+
+def create_project(project_name: str | None = None) -> dict:
+    timestamp = current_timestamp()
+    project_id = uuid.uuid4().hex
+    name = project_name.strip() if project_name and project_name.strip() else f"Project {timestamp}"
+    project = {
+        "project_id": project_id,
+        "project_name": name,
+        "created_at": timestamp,
+        "updated_at": timestamp,
+        "chat_history": [],
+        "state": {},
+        "diagram_json": {},
+    }
+    write_project(project)
+    return project
+
+
+def export_workflow_state() -> dict:
+    state = {key: st.session_state.get(key) for key in DEFAULTS}
+    state["artifact_id"] = None
+    state["conceptual_url"] = None
+    state["logical_url"] = None
+    state["physical_url"] = None
+    state["requirement_input"] = st.session_state.get("requirement_input", "")
+    state["supportive_requirement_input"] = st.session_state.get("supportive_requirement_input", "")
+    state["conceptual_change_request"] = st.session_state.get("conceptual_change_request", "")
+    return state
+
+
+def export_diagram_json() -> dict:
+    return {
+        "conceptual": {
+            "model_json": st.session_state.get("conceptual"),
+            "diagram_url": None,
+            "diagram_version": st.session_state.get("conceptual_diagram_version", 0),
+        },
+        "logical": {
+            "model_json": st.session_state.get("logical"),
+            "diagram_url": None,
+            "diagram_version": st.session_state.get("logical_diagram_version", 0),
+        },
+        "physical": {
+            "model_json": st.session_state.get("physical"),
+            "diagram_url": None,
+            "diagram_version": st.session_state.get("physical_diagram_version", 0),
+        },
+    }
+
+
+def diagram_json_from_state(state: dict) -> dict:
+    if not isinstance(state, dict):
+        state = {}
+
+    return {
+        "conceptual": {
+            "model_json": state.get("conceptual"),
+            "diagram_url": None,
+            "diagram_version": state.get("conceptual_diagram_version", 0),
+        },
+        "logical": {
+            "model_json": state.get("logical"),
+            "diagram_url": None,
+            "diagram_version": state.get("logical_diagram_version", 0),
+        },
+        "physical": {
+            "model_json": state.get("physical"),
+            "diagram_url": None,
+            "diagram_version": state.get("physical_diagram_version", 0),
+        },
+    }
+
+
+def workflow_state_from_diagram_json(diagram_json: dict) -> dict:
+    if not isinstance(diagram_json, dict):
+        return {}
+
+    conceptual = diagram_json.get("conceptual", {})
+    logical = diagram_json.get("logical", {})
+    physical = diagram_json.get("physical", {})
+
+    return {
+        "artifact_id": None,
+        "conceptual": conceptual.get("model_json"),
+        "logical": logical.get("model_json"),
+        "physical": physical.get("model_json"),
+        "conceptual_url": None,
+        "logical_url": None,
+        "physical_url": None,
+        "conceptual_diagram_version": conceptual.get("diagram_version", 0),
+        "logical_diagram_version": logical.get("diagram_version", 0),
+        "physical_diagram_version": physical.get("diagram_version", 0),
+    }
+
+
+def load_workflow_state(state: dict) -> None:
+    reset_workflow_state()
+
+    for key, value in state.items():
+        if key in DEFAULTS or key in {
+            "requirement_input",
+            "supportive_requirement_input",
+            "conceptual_change_request",
+        }:
+            st.session_state[key] = value
+
+    st.session_state.artifact_id = None
+
+
+def save_current_project(
+    action_label: str,
+    user_message: str = "",
+    assistant_message: str = "",
+) -> None:
+    project_id = st.session_state.get("current_project_id")
+    if not project_id:
+        return
+
+    project = read_project(project_id)
+    if project is None:
+        project = {
+            "project_id": project_id,
+            "project_name": st.session_state.get("current_project_name") or "Untitled Project",
+            "created_at": current_timestamp(),
+            "updated_at": current_timestamp(),
+            "chat_history": [],
+            "state": {},
+        }
+
+    timestamp = current_timestamp()
+    if user_message:
+        project.setdefault("chat_history", []).append(
+            {
+                "timestamp": timestamp,
+                "role": "user",
+                "action": action_label,
+                "message": user_message,
+            }
+        )
+    if assistant_message:
+        project.setdefault("chat_history", []).append(
+            {
+                "timestamp": timestamp,
+                "role": "assistant",
+                "action": action_label,
+                "message": assistant_message,
+            }
+        )
+
+    project["project_name"] = st.session_state.get("current_project_name") or project.get("project_name")
+    project["updated_at"] = timestamp
+    project["state"] = export_workflow_state()
+    project["diagram_json"] = export_diagram_json()
+    write_project(project)
+
+
+def open_project(project: dict) -> None:
+    st.session_state.current_project_id = project["project_id"]
+    st.session_state.current_project_name = project.get("project_name", "Untitled Project")
+    diagram_state = workflow_state_from_diagram_json(project.get("diagram_json", {}))
+    state = {
+        **(project.get("state") or {}),
+        **{key: value for key, value in diagram_state.items() if value is not None},
+        "artifact_id": None,
+        "conceptual_url": None,
+        "logical_url": None,
+        "physical_url": None,
+    }
+    load_workflow_state(state)
+    st.session_state.current_project_id = project["project_id"]
+    st.session_state.current_project_name = project.get("project_name", "Untitled Project")
+    st.session_state.app_page = "main"
+    st.session_state.show_project_picker = False
+
+
+def start_new_project(project_name: str = "") -> None:
+    reset_workflow_state()
+    project = create_project(project_name)
+    st.session_state.current_project_id = project["project_id"]
+    st.session_state.current_project_name = project["project_name"]
+    st.session_state.app_page = "main"
+    st.session_state.show_project_picker = False
+
+
+def render_project_picker(projects: list[dict]) -> None:
+    st.markdown("<div class='project-picker'>", unsafe_allow_html=True)
+    st.subheader("Previous Projects")
+
+    if not projects:
+        st.info("No saved projects found yet. Create a new project first.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    project_options = {
+        f"{project.get('project_name', 'Untitled Project')} | Updated {project.get('updated_at', 'unknown')}": project
+        for project in projects
+    }
+    selected_label = st.selectbox(
+        "Select project",
+        list(project_options.keys()),
+        label_visibility="collapsed",
+    )
+
+    open_col, cancel_col = st.columns([1, 1])
+    with open_col:
+        if st.button("Open Selected Project", use_container_width=True):
+            open_project(project_options[selected_label])
+            st.rerun()
+
+    with cancel_col:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state.show_project_picker = False
+            st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_landing_page() -> None:
+    saved_projects = list_saved_projects()
+
+    usecase_1_col, usecase_2_col, old_repo_col, docs_col = st.columns([1, 1, 1.45, 0.8])
+
+    with usecase_1_col:
+        if st.button("Credit Risk", use_container_width=True):
+            start_new_project()
+            st.session_state.supportive_requirement_input = USE_CASE_REQUIREMENTS["usecase_1"]
+            st.rerun()
+
+    with usecase_2_col:
+        if st.button("Loan", use_container_width=True):
+            start_new_project()
+            st.session_state.supportive_requirement_input = USE_CASE_REQUIREMENTS["usecase_2"]
+            st.rerun()
+
+    with old_repo_col:
+        if saved_projects:
+            project_options = {
+                f"{project.get('project_name', 'Untitled Project')} | {project.get('updated_at', 'unknown')}": project
+                for project in saved_projects
+            }
+            selected_project_label = st.selectbox(
+                "Old repo",
+                ["Select old repo"] + list(project_options.keys()),
+                label_visibility="collapsed",
+            )
+            if selected_project_label != "Select old repo":
+                open_project(project_options[selected_project_label])
+                st.rerun()
+        else:
+            st.button("Old Repo (0)", disabled=True, use_container_width=True)
+
+    with docs_col:
+        if st.button("Docs", use_container_width=True):
+            st.session_state.landing_notice = "Docs placeholder: add your project documentation link here."
+            st.rerun()
+
+    if st.session_state.get("landing_notice"):
+        st.info(st.session_state.landing_notice)
+
+    st.markdown("<div class='landing-section-title'>Data Modeling Flow</div>", unsafe_allow_html=True)
+    card_columns = st.columns(4)
+    for index, card in enumerate(LANDING_TOOL_CARDS):
+        with card_columns[index]:
+            upcoming_class = " is-upcoming" if card["title"] == "Upcoming" else ""
+            st.markdown(
+                f"""
+                <div class="landing-tool-card{upcoming_class}">
+                    <span class="landing-tool-phase">{html.escape(card["phase"])}</span>
+                    <h3>{html.escape(card["title"])}</h3>
+                    <p>{html.escape(card["description"])}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    if EXAMPLE_IMAGE_PATH.exists():
+        encoded_example = base64.b64encode(EXAMPLE_IMAGE_PATH.read_bytes()).decode("utf-8")
+        st.markdown(
+            f"""
+            <section class="landing-example-section">
+                <div class="landing-example-frame">
+                    <img src="data:image/jpeg;base64,{encoded_example}" alt="Example workflow preview" />
+                </div>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("example.jpeg is not available in the project root.")
+
+    tech_used_pills = "".join(
+        f"<span class='tech-stack-pill'>{html.escape(tech)}</span>"
+        for tech in TECH_USED
+    )
+
+    st.markdown(
+        f"""
+        <section class="tech-stack-section">
+            <div class="tech-stack-list">
+                <span class="tech-stack-label">Tech Stack:</span>
+                {tech_used_pills}
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def api_post(payload: dict, action_label: str) -> requests.Response:
     try:
         with st.spinner(f"{action_label}..."):
@@ -573,8 +1347,111 @@ def api_post(payload: dict, action_label: str) -> requests.Response:
         st.stop()
 
 
+#editd by mani
+def build_conceptual_continuation_payload(requirement: str) -> dict:
+    return {
+        "artifact_id": st.session_state.artifact_id,
+        "requirement": requirement,
+    }
+
+
+def diagram_layer_from_title(title: str) -> str:
+    return title.split(" ", 1)[0].lower()
+
+
+#editd by mani
+def get_saved_mermaid(layer: str) -> str | None:
+    model_json = st.session_state.get(layer)
+
+    if not isinstance(model_json, dict):
+        return None
+
+    mermaid_text = model_json.get("er_diagram_mermaid")
+    if isinstance(mermaid_text, str) and mermaid_text.strip():
+        return mermaid_text
+
+    return None
+
+
+#editd by mani
+def build_saved_mermaid_html(title: str, payload: dict, mermaid_text: str) -> str:
+    payload_json = json.dumps(payload, indent=2)
+    safe_mermaid_text = html.escape(mermaid_text)
+    mermaid_js = json.dumps(mermaid_text)
+    payload_js = json.dumps(payload_json)
+    json_filename = f"{diagram_layer_from_title(title)}_model.json"
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
+  </script>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 0; background: #f7f7fb; color: #1f2937; }}
+    .wrap {{ max-width: 1180px; margin: 0 auto; background: #ffffff; border-radius: 12px; padding: 24px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); }}
+    h1 {{ margin-top: 0; }}
+    .toolbar {{ display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }}
+    button {{ border: 0; border-radius: 8px; padding: 10px 14px; background: #0f766e; color: #ffffff; cursor: pointer; font-size: 14px; }}
+    pre {{ background: #111827; color: #e5e7eb; padding: 16px; border-radius: 10px; overflow-x: auto; white-space: pre-wrap; }}
+    .section {{ margin-top: 24px; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>{html.escape(title)}</h1>
+    <div class="toolbar">
+      <button onclick="downloadMermaid()">Download .mmd</button>
+      <button onclick="downloadJson()">Download JSON</button>
+    </div>
+    <div class="mermaid">
+{safe_mermaid_text}
+    </div>
+    <div class="section"><h2>Mermaid Source</h2><pre id="source"></pre></div>
+  </div>
+  <script>
+    const mermaidText = {mermaid_js};
+    const modelJson = {payload_js};
+    document.getElementById("source").textContent = mermaidText;
+    function downloadMermaid() {{
+      const blob = new Blob([mermaidText], {{ type: "text/plain;charset=utf-8" }});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "er_diagram.mmd";
+      link.click();
+      URL.revokeObjectURL(url);
+    }}
+    function downloadJson() {{
+      const blob = new Blob([modelJson], {{ type: "application/json;charset=utf-8" }});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = {json.dumps(json_filename)};
+      link.click();
+      URL.revokeObjectURL(url);
+    }}
+  </script>
+</body>
+</html>"""
+
+
 def show_diagram(title: str, url: str | None, height: int = 760) -> None:
     st.subheader(title)
+    layer = diagram_layer_from_title(title)
+    saved_mermaid = get_saved_mermaid(layer)
+
+    if saved_mermaid:
+        model_json = st.session_state.get(layer, {})
+        st.components.v1.html(
+            build_saved_mermaid_html(title, model_json, saved_mermaid),
+            height=height,
+            scrolling=True,
+        )
+        return
 
     if not url:
         st.info("Diagram is not available yet.")
@@ -598,18 +1475,24 @@ def store_orchestrate_response(data: dict) -> None:
     if data.get("conceptual_artifact_id"):
         st.session_state.artifact_id = data["conceptual_artifact_id"]
 
-    conceptual_output = data.get("conceptual_output")
-    logical_output = data.get("logical_output")
-    physical_output = data.get("physical_output")
+    conceptual_output = data.get("conceptual_output", st.session_state.get("conceptual"))
+    logical_output = data.get("logical_output", st.session_state.get("logical"))
+    physical_output = data.get("physical_output", st.session_state.get("physical"))
 
-    st.session_state.conceptual_status = data.get("conceptual_status")
+    st.session_state.conceptual_status = data.get(
+        "conceptual_status",
+        st.session_state.get("conceptual_status"),
+    )
     st.session_state.conceptual = conceptual_output
     st.session_state.logical = logical_output
     st.session_state.physical = physical_output
-    st.session_state.conceptual_url = data.get("conceptual_view_url")
-    st.session_state.logical_url = data.get("logical_view_url")
-    st.session_state.physical_url = data.get("physical_view_url")
-    st.session_state.agent_final_answer = data.get("agent_final_answer", "")
+    st.session_state.conceptual_url = data.get("conceptual_view_url", st.session_state.get("conceptual_url"))
+    st.session_state.logical_url = data.get("logical_view_url", st.session_state.get("logical_url"))
+    st.session_state.physical_url = data.get("physical_view_url", st.session_state.get("physical_url"))
+    st.session_state.agent_final_answer = data.get(
+        "agent_final_answer",
+        st.session_state.get("agent_final_answer", ""),
+    )
 
     if conceptual_output and st.session_state.conceptual_url:
         st.session_state.conceptual_diagram_version += 1
@@ -617,9 +1500,29 @@ def store_orchestrate_response(data: dict) -> None:
         st.session_state.logical_diagram_version += 1
     if physical_output and st.session_state.physical_url:
         st.session_state.physical_diagram_version += 1
+    if (
+        st.session_state.conceptual_status == "approved"
+        or logical_output is not None
+        or physical_output is not None
+    ):
+        st.session_state.conceptual_approved = True
 
+
+if st.session_state.app_page == "landing":
+    render_landing_page()
+    st.stop()
+
+if st.session_state.app_page == "main" and not st.session_state.current_project_id:
+    start_new_project()
 
 with st.sidebar:
+    if st.button("Back to Landing", use_container_width=True):
+        st.session_state.app_page = "landing"
+        st.rerun()
+
+    st.caption("Current Project")
+    st.info(st.session_state.current_project_name or "Untitled Project")
+
     st.header("Data Products")
     selected_product = st.radio(
         "Data Products",
@@ -629,8 +1532,39 @@ with st.sidebar:
 
     st.divider()
     if st.button("Start New Workflow", use_container_width=True):
-        reset_workflow_state()
+        start_new_project()
         st.rerun()
+
+    project = read_project(st.session_state.current_project_id) if st.session_state.current_project_id else None
+    if project:
+        with st.expander("Project History"):
+            diagram_json = project.get("diagram_json", {})
+            saved_layers = [
+                layer_name.title()
+                for layer_name, layer_data in diagram_json.items()
+                if isinstance(layer_data, dict)
+                and layer_data.get("model_json") is not None
+            ]
+            if saved_layers:
+                st.caption(f"Saved JSON/Diagrams: {', '.join(saved_layers)}")
+
+            st.download_button(
+                "Download Project JSON",
+                data=json.dumps(project, indent=2, ensure_ascii=False),
+                file_name=f"{project.get('project_name', 'project').replace(' ', '_')}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+
+            if not project.get("chat_history"):
+                st.caption("No chat history saved yet.")
+
+            for item in project.get("chat_history", [])[-8:]:
+                role = item.get("role", "user").title()
+                action = item.get("action", "")
+                message = item.get("message", "")
+                st.caption(f"{role} | {action} | {item.get('timestamp', '')}")
+                st.write(message[:350] + ("..." if len(message) > 350 else ""))
 
 if selected_product == "Conceptual":
     st.header("Enter Business Requirement")
@@ -716,7 +1650,13 @@ if selected_product == "Conceptual":
             st.error(response.text)
             st.stop()
 
-        store_orchestrate_response(response.json())
+        response_data = response.json()
+        store_orchestrate_response(response_data)
+        save_current_project(
+            action_label="Generate Conceptual Draft",
+            user_message=requirement,
+            assistant_message=response_data.get("agent_final_answer", "Conceptual draft generated."),
+        )
         st.success("Conceptual draft generated.")
         st.rerun()
 
@@ -749,10 +1689,7 @@ if selected_product == "Conceptual":
                         st.stop()
 
                     response = api_post(
-                        payload={
-                            "artifact_id": st.session_state.artifact_id,
-                            "requirement": change_request,
-                        },
+                        payload=build_conceptual_continuation_payload(change_request),
                         action_label="Updating conceptual draft",
                     )
 
@@ -760,8 +1697,14 @@ if selected_product == "Conceptual":
                         st.error(response.text)
                         st.stop()
 
-                    store_orchestrate_response(response.json())
+                    response_data = response.json()
+                    store_orchestrate_response(response_data)
                     st.session_state.conceptual_updated = True
+                    save_current_project(
+                        action_label="Update Conceptual Draft",
+                        user_message=change_request,
+                        assistant_message=response_data.get("agent_final_answer", "Conceptual draft updated."),
+                    )
                     st.success("Conceptual draft updated.")
                     st.rerun()
 
@@ -772,10 +1715,7 @@ if selected_product == "Conceptual":
                         st.stop()
 
                     response = api_post(
-                        payload={
-                            "artifact_id": st.session_state.artifact_id,
-                            "requirement": "approve",
-                        },
+                        payload=build_conceptual_continuation_payload("approve"),
                         action_label="Approving conceptual draft",
                     )
 
@@ -783,8 +1723,19 @@ if selected_product == "Conceptual":
                         st.error(response.text)
                         st.stop()
 
-                    store_orchestrate_response(response.json())
+                    response_data = response.json()
+                    store_orchestrate_response(response_data)
                     st.session_state.conceptual_updated = True
+                    st.session_state.conceptual_approved = True
+                    st.session_state.conceptual_status = "approved"
+                    save_current_project(
+                        action_label="Approve Conceptual Draft",
+                        user_message="approve",
+                        assistant_message=response_data.get(
+                            "agent_final_answer",
+                            "Conceptual draft approved. Logical and physical outputs generated.",
+                        ),
+                    )
                     st.success("Conceptual draft approved.")
                     st.rerun()
 
