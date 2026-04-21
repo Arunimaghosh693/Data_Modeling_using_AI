@@ -120,6 +120,15 @@ def _build_artifact_links(request: Request, stage: str, artifact_id: str) -> dic
 
 
 #editd by mani
+def _generation_failed(step_name: str, exc: Exception) -> None:
+    logging.exception("%s generation failed. No fallback artifact will be created.", step_name)
+    raise HTTPException(
+        status_code=502,
+        detail=f"{step_name} generation or validation failed. Please verify GEMINI_API_KEY, GEMINI_MODEL, and model output format.",
+    ) from exc
+
+
+#editd by mani
 def _normalized_entity_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
@@ -380,17 +389,24 @@ def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> Orchestr
 
         if _is_approval_instruction(requirement):
             conceptual = _apply_generated_mermaid(conceptual)
+
+            try:
+                logical_payload = logical_model_core(conceptual.model_dump())
+            except Exception as exc:
+                _generation_failed("Logical model", exc)
+
+            logical = _apply_generated_logical_mermaid(LogicalModel.model_validate(logical_payload))
+
+            try:
+                physical_payload = physical_model_core(logical.model_dump())
+            except Exception as exc:
+                _generation_failed("Physical model", exc)
+
+            physical = _apply_generated_physical_mermaid(PhysicalModel.model_validate(physical_payload))
+
             update_conceptual_artifact(artifact_id, conceptual)
             set_conceptual_artifact_status(artifact_id, "approved")
-
-            logical = _apply_generated_logical_mermaid(
-                LogicalModel.model_validate(logical_model_core(conceptual.model_dump()))
-            )
             logical_artifact_id = save_logical_artifact(logical)
-
-            physical = _apply_generated_physical_mermaid(
-                PhysicalModel.model_validate(physical_model_core(logical.model_dump()))
-            )
             physical_artifact_id = save_physical_artifact(physical)
 
             return _build_orchestrator_response(
@@ -415,7 +431,10 @@ def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> Orchestr
             to_entity = _resolve_conceptual_entity_name(conceptual, to_entity)
 
         if not from_entity or not to_entity:
-            patch = conceptual_update_patch_core(conceptual.model_dump(), requirement)
+            try:
+                patch = conceptual_update_patch_core(conceptual.model_dump(), requirement)
+            except Exception as exc:
+                _generation_failed("Conceptual update", exc)
 
             for entity in patch.get("entities_to_add", []):
                 updated_name = entity.get("name", "")
@@ -503,9 +522,12 @@ def orchestrate_endpoint(payload: ModelingRequest, request: Request) -> Orchestr
             agent_final_answer=f"Conceptual relationship updated between {from_entity} and {to_entity}. Review the revised draft and send requirement as 'approve' or 'save' with the same artifact_id when ready.",
         )
 
-    conceptual = _apply_generated_mermaid(
-        ConceptualModel.model_validate(conceptual_model_core(requirement))
-    )
+    try:
+        conceptual_payload = conceptual_model_core(requirement)
+    except Exception as exc:
+        _generation_failed("Conceptual model", exc)
+
+    conceptual = _apply_generated_mermaid(ConceptualModel.model_validate(conceptual_payload))
     conceptual_artifact_id = save_conceptual_artifact(conceptual, status="draft")
     return _build_orchestrator_response(
         request=request,

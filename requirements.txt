@@ -1,12 +1,12 @@
 fastapi==0.115.0
 uvicorn==0.30.6
-openai==1.75.0
 pydantic==2.9.2
 python-dotenv==1.0.1
 langchain-core==0.3.59
-langchain-openai==0.3.16
+langchain-google-genai==2.1.4
 langgraph==0.4.1
 sentence-transformers==2.7.0
 faiss-cpu==1.8.0
 numpy==1.26.4
 streamlit==1.33.0
+google-generativeai

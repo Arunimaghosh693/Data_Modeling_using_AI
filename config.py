@@ -12,9 +12,11 @@ if load_dotenv is not None:
     load_dotenv()
 
 
-def get_openai_api_key() -> str | None:
-    return os.getenv("OPENAI_API_KEY")
+#editd by mani
+def get_gemini_api_key() -> str | None:
+    return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 
-def get_openai_model() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-4.1")
+#editd by mani
+def get_gemini_model() -> str:
+    return os.getenv("GEMINI_MODEL", "gemini-2.5-pro")

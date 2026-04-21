@@ -149,6 +149,7 @@ Rules:
 - Add or update only the relationships needed for the instruction.
 - Stay strictly conceptual: no PK, FK, SQL, or physical details.
 - If a new entity is added, also include at least one relationship that connects it to an existing or newly added entity.
+- Use empty arrays when no entity or relationship is required; do not return placeholder values like "string".
 
 Required output:
 {{

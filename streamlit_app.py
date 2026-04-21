@@ -47,7 +47,7 @@ TECH_USED = [
     "Python",
     "FastAPI",
     "Streamlit",
-    "OpenAI",
+    "Gemini",
     "LangGraph",
     "LangChain",
     "FAISS",
@@ -103,10 +103,14 @@ def render_app_logo() -> None:
         .app-fixed-header-title {{
             margin: 0;
             color: rgba(250, 250, 250, 0.98);
-            font-size: 2rem;
-            font-weight: 700;
-            line-height: 1;
-            letter-spacing: -0.02em;
+            max-width: calc(100vw - 28rem);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 30px !important;
+            font-weight: 700 !important;
+            line-height: 1.05 !important;
+            letter-spacing: -0.02em !important;
         }}
         div.block-container {{
             padding-top: 6.6rem;
@@ -127,7 +131,8 @@ def render_app_logo() -> None:
                 right: 0.75rem;
             }}
             .app-fixed-header-title {{
-                font-size: 1.35rem;
+                max-width: calc(100vw - 6rem);
+                font-size: 20px !important;
             }}
             body:has(section[data-testid="stSidebar"][aria-expanded="true"]) .app-fixed-header {{
                 left: 4.2rem;
@@ -152,6 +157,42 @@ render_app_logo()
 st.markdown(
     """
     <style>
+    div.block-container {
+        font-size: 15px;
+    }
+    div.block-container h1 {
+        font-size: 34px !important;
+        line-height: 1.15 !important;
+        letter-spacing: -0.02em !important;
+    }
+    div.block-container h2 {
+        font-size: 30px !important;
+        line-height: 1.16 !important;
+        letter-spacing: -0.02em !important;
+    }
+    div.block-container h3 {
+        font-size: 20px !important;
+        line-height: 1.2 !important;
+    }
+    div.block-container label,
+    div.block-container input,
+    div.block-container textarea,
+    div.block-container button,
+    div.block-container p {
+        font-size: 15px;
+    }
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3 {
+        font-size: 22px !important;
+        line-height: 1.2 !important;
+    }
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] button,
+    section[data-testid="stSidebar"] span {
+        font-size: 15px !important;
+    }
     .workflow-stepper {
         display: flex;
         flex-wrap: nowrap;
@@ -178,7 +219,7 @@ st.markdown(
         border: 1px solid rgba(255, 255, 255, 0.08);
         background: rgba(255, 255, 255, 0.04);
         color: rgba(250, 250, 250, 0.68);
-        font-size: 0.84rem;
+        font-size: 13px;
         font-weight: 600;
         transition: all 180ms ease;
     }
@@ -207,14 +248,14 @@ st.markdown(
         height: 1.2rem;
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.14);
-        font-size: 0.68rem;
+        font-size: 11px;
         font-weight: 800;
         color: inherit;
         flex: 0 0 auto;
     }
     .workflow-arrow {
         color: rgba(250, 250, 250, 0.34);
-        font-size: 0.95rem;
+        font-size: 15px;
         font-weight: 700;
     }
     .landing-hero {
@@ -453,8 +494,12 @@ st.markdown(
         display: none;
     }
     [data-testid="stFileUploader"] {
-        width: 4.4rem;
+        width: 4.4rem !important;
+        min-width: 4.4rem !important;
+        max-width: 4.4rem !important;
         height: 3.2rem;
+        min-height: 3.2rem !important;
+        max-height: 3.2rem !important;
         overflow: hidden;
         border-radius: 999px;
         margin: 0;
@@ -477,20 +522,42 @@ st.markdown(
         z-index: 2;
     }
     [data-testid="stFileUploader"] section {
-        width: 4.4rem;
-        height: 3.2rem;
-        min-height: 3.2rem;
+        width: 4.4rem !important;
+        min-width: 4.4rem !important;
+        max-width: 4.4rem !important;
+        height: 3.2rem !important;
+        min-height: 3.2rem !important;
+        max-height: 3.2rem !important;
         padding: 0 !important;
         border-radius: 999px !important;
         border: 0 !important;
         background: transparent !important;
         overflow: hidden;
     }
+    [data-testid="stFileUploader"] > div,
+    [data-testid="stFileUploader"] section > div,
+    [data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"],
+    [data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] {
+        width: 4.4rem !important;
+        min-width: 4.4rem !important;
+        max-width: 4.4rem !important;
+        height: 3.2rem !important;
+        min-height: 3.2rem !important;
+        max-height: 3.2rem !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
     [data-testid="stFileUploader"] section > div:first-child,
     [data-testid="stFileUploader"] small,
     [data-testid="stFileUploader"] span,
-    [data-testid="stFileUploader"] p {
-        display: none;
+    [data-testid="stFileUploader"] p,
+    [data-testid="stFileUploader"] svg,
+    [data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] * {
+        visibility: hidden !important;
+        opacity: 0 !important;
+        color: transparent !important;
     }
     [data-testid="stFileUploader"] button {
         width: 4.4rem;
@@ -521,7 +588,7 @@ st.markdown(
         background-color: transparent !important;
         color: rgba(250, 250, 250, 0.95);
         padding: 0.72rem 0.85rem;
-        font-size: 1.18rem;
+        font-size: 16px !important;
         line-height: 1.45;
         box-shadow: none !important;
         overflow-y: auto;
@@ -563,7 +630,7 @@ st.markdown(
         background: rgba(255, 255, 255, 0.08);
         color: rgba(250, 250, 250, 0.95);
         padding: 0 0.75rem;
-        font-size: 0.95rem;
+        font-size: 15px !important;
         font-weight: 700;
         line-height: 1;
     }

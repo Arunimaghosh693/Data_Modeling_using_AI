@@ -1,20 +1,32 @@
 from __future__ import annotations
 
 try:
-    from langchain_openai import ChatOpenAI
+    from langchain_google_genai import ChatGoogleGenerativeAI
     from langgraph.prebuilt import create_react_agent
 
-    from config import get_openai_model
+    from config import get_gemini_api_key, get_gemini_model
     from tools import conceptual_tool, logical_tool, physical_tool, rag_tool  #added by swamy
 except ImportError:  # pragma: no cover
-    from langchain_openai import ChatOpenAI
+    from langchain_google_genai import ChatGoogleGenerativeAI
     from langgraph.prebuilt import create_react_agent
 
-    from .config import get_openai_model
+    from .config import get_gemini_api_key, get_gemini_model
     from .tools import conceptual_tool, logical_tool, physical_tool, rag_tool  #added by swamy
 
 
-llm = ChatOpenAI(model=get_openai_model())
+#editd by mani
+gemini_kwargs = {
+    "model": get_gemini_model(),
+    "temperature": 4,
+    "max_retries": 0,  #editd by mani
+    "timeout": 30,  #editd by mani
+}
+gemini_api_key = get_gemini_api_key()
+if not gemini_api_key:
+    raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY must be set to use Gemini.")
+gemini_kwargs["google_api_key"] = gemini_api_key
+
+llm = ChatGoogleGenerativeAI(**gemini_kwargs)
 
 tools = [rag_tool, conceptual_tool, logical_tool, physical_tool]  #added by swamy
 

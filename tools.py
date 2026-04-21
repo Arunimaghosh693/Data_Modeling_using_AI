@@ -10,12 +10,12 @@ from typing import Any, Dict, List
 from langchain_core.tools import tool
 
 try:
-    from openai import OpenAI
-except ImportError:  
-    OpenAI = None
+    from langchain_google_genai import ChatGoogleGenerativeAI
+except ImportError:
+    ChatGoogleGenerativeAI = None
 
 try:
-    from config import get_openai_api_key, get_openai_model
+    from config import get_gemini_api_key, get_gemini_model
     from prompts import (
         get_conceptual_prompt,
         get_conceptual_update_prompt,
@@ -25,7 +25,7 @@ try:
     from rag import get_relevant_context
     from schemas import ConceptualModel, ConceptualUpdatePatch, LogicalModel, PhysicalModel, PhysicalModelTemplate  #added by swamy
 except ImportError:  # pragma: no cover
-    from .config import get_openai_api_key, get_openai_model
+    from .config import get_gemini_api_key, get_gemini_model
     from .prompts import (
         get_conceptual_prompt,
         get_conceptual_update_prompt,
@@ -39,10 +39,16 @@ except ImportError:  # pragma: no cover
 
 
 def _build_client():
-    api_key = get_openai_api_key()
-    if not api_key or OpenAI is None:
+    api_key = get_gemini_api_key()
+    if not api_key or ChatGoogleGenerativeAI is None:
         return None
-    return OpenAI(api_key=api_key)
+    return ChatGoogleGenerativeAI(
+        model=get_gemini_model(),
+        google_api_key=api_key,
+        temperature=4,
+        max_retries=0,  #editd by mani
+        timeout=30,  #editd by mani
+    )
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
@@ -822,16 +828,35 @@ def _fallback_physical_model(logical_output: Dict[str, Any]) -> Dict[str, Any]:
 def _generate_json(prompt: str, system_message: str) -> Dict[str, Any]:
     client = _build_client()
     if client is None:
-        raise RuntimeError("OpenAI client is not configured.")
+        raise RuntimeError("Gemini client is not configured.")
 
-    response = client.responses.create(
-        model=get_openai_model(),
-        input=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": prompt},
-        ],
+    response = client.invoke(
+        [
+            ("system", system_message),
+            ("human", prompt),
+        ]
     )
-    return _extract_json(response.output_text)
+    return _extract_json(response.content)
+
+
+#editd by mani
+def _generate_structured_json(prompt: str, system_message: str, schema: Any) -> Dict[str, Any]:
+    client = _build_client()
+    if client is None:
+        raise RuntimeError("Gemini client is not configured.")
+
+    structured_client = client.with_structured_output(schema)
+    response = structured_client.invoke(
+        [
+            ("system", system_message),
+            ("human", prompt),
+        ]
+    )
+    if hasattr(response, "model_dump"):
+        return response.model_dump()
+    if isinstance(response, dict):
+        return response
+    raise TypeError(f"Gemini structured output returned unsupported response type: {type(response).__name__}")
 
 
 def rag_context_core(requirement: str, k: int = 12) -> str:
@@ -853,8 +878,9 @@ def conceptual_model_core(requirement: str) -> Dict[str, Any]:
         if not conceptual.rag_context_used:
             conceptual.rag_context_used = context
         return ensure_connected_conceptual_model(conceptual.model_dump(), context)
-    except Exception:
-        return ensure_connected_conceptual_model(_fallback_conceptual_model(requirement, context), context)
+    except Exception as exc:
+        logger.exception("Gemini conceptual generation failed; stopping workflow. Error: %s", exc)  #editd by mani
+        raise
 
 
 #editd by mani
@@ -865,14 +891,16 @@ def conceptual_update_patch_core(
     prompt = get_conceptual_update_prompt(conceptual_payload, instruction)
     try:
         patch = ConceptualUpdatePatch.model_validate(
-            _generate_json(
+            _generate_structured_json(
                 prompt,
                 "You are a senior enterprise data architect specializing in conceptual model change requests. Return only a minimal JSON patch for the requested conceptual update.",
+                ConceptualUpdatePatch,
             )
         )
         return patch.model_dump()
-    except Exception:
-        return _fallback_conceptual_update_patch(conceptual_payload, instruction)
+    except Exception as exc:
+        logger.exception("Gemini conceptual update failed; stopping workflow. Error: %s", exc)  #editd by mani
+        raise
 
 
 def logical_model_core(conceptual_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -885,8 +913,9 @@ def logical_model_core(conceptual_payload: Dict[str, Any]) -> Dict[str, Any]:
             )
         )
         return _normalize_logical_identifier_types(logical.model_dump())
-    except Exception:
-        return _fallback_logical_model(conceptual_payload)
+    except Exception as exc:
+        logger.exception("Gemini logical generation failed; stopping workflow. Error: %s", exc)  #editd by mani
+        raise
 
 
 #added by swamy
@@ -900,9 +929,9 @@ def physical_model_core(logical_payload: Dict[str, Any]) -> Dict[str, Any]:
             )
         )
         return _normalize_physical_identifier_types(physical.model_dump())
-    except Exception:
-        fallback = _fallback_physical_model(logical_payload)
-        return PhysicalModel.model_validate(fallback).model_dump()
+    except Exception as exc:
+        logger.exception("Gemini physical generation failed; stopping workflow. Error: %s", exc)  #editd by mani
+        raise
 
 
 @tool

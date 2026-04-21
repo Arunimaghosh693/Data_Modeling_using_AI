@@ -40,12 +40,12 @@ cp .env.example .env
 Then set:
 
 ```env
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4.1
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-pro
 ```
 
-This repo now also includes a local `.env` file stub. Replace `paste_your_openai_api_key_here`
-with the actual key before running against OpenAI.
+This repo now also includes a local `.env` file stub. Replace `your_gemini_api_key_here`
+with the actual key before running against Gemini.
 
 ## Example Swagger request
 
@@ -57,13 +57,13 @@ with the actual key before running against OpenAI.
 }
 ```
 
-## OpenAI setup
+## Gemini setup
 
-- Store `OPENAI_API_KEY` in `.env`
-- Optional: set `OPENAI_MODEL` if you want a model other than the default `gpt-4.1`
+- Store `GEMINI_API_KEY` in `.env`
+- Optional: set `GEMINI_MODEL` if you want a model other than the default `gemini-2.5-pro`
 
 ## Notes
 
-- If OpenAI is unavailable, the app falls back to deterministic local outputs so the flow still demos cleanly.
+- If Gemini is unavailable, the app falls back to deterministic local outputs so the flow still demos cleanly.
 - Conceptual modeling should use a structured output schema, not a physical database schema.
 - Mermaid is generated from the conceptual model structure using `utils/mermaid_builder.py`.
