@@ -106,6 +106,118 @@ class PhysicalModel(BaseModel):
     er_diagram_mermaid: str = ""
 
 
+class AnalyticsGlossaryContent(BaseModel):
+    search_text: Optional[str] = ""
+    entity_description: Optional[str] = ""
+
+
+class AnalyticsGlossaryMetadata(BaseModel):
+    physical_region: Optional[str] = None
+    entityname_normalized: str = ""
+    layer_normalized: str = ""
+    category: Optional[str] = None
+    source_system: Optional[str] = None
+    data_classification: Optional[str] = None
+    attribute_count: int = 0
+    group_count: int = 0
+
+
+class AnalyticsGlossaryAttribute(BaseModel):
+    doc_id: str
+    attribute: str
+    attribute_normalized: str = ""
+    group: Optional[str] = None
+    group_normalized: str = ""
+    family: str = ""
+    attribute_description: str = ""
+    search_text: str = ""
+    is_pii_column: Optional[str] = None
+    is_sensitive_column: Optional[str] = None
+    category: Optional[str] = None
+    source_system: Optional[str] = None
+    data_classification: Optional[str] = None
+    response_payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AnalyticsGlossaryAttributeGroup(BaseModel):
+    group: str
+    group_normalized: str = ""
+    attributes: List[str] = Field(default_factory=list)
+    attribute_count: int = 0
+    search_text: str = ""
+
+
+class AnalyticsGlossaryDocument(BaseModel):
+    doc_id: str
+    doc_type: str = "entity"
+    entityname: str
+    layer: str = ""
+    content: AnalyticsGlossaryContent = Field(default_factory=AnalyticsGlossaryContent)
+    metadata: AnalyticsGlossaryMetadata = Field(default_factory=AnalyticsGlossaryMetadata)
+    attribute_groups: List[AnalyticsGlossaryAttributeGroup] = Field(default_factory=list)
+    attributes: List[AnalyticsGlossaryAttribute] = Field(default_factory=list)
+
+
+class AnalyticsRequest(BaseModel):
+    query: str = Field(..., description="Attribute search query or natural-language glossary question.")
+    approve_cda_fallback: bool = Field(
+        default=False,
+        description="Set to true to allow CDA-layer results when no suitable GDA or MDA result is found.",
+    )
+
+
+class AnalyticsDocumentResponsePayload(BaseModel):
+    entityname: str
+    attribute: str
+    layer: str
+    physical_region: Optional[str] = None
+
+
+class AnalyticsDocumentContent(BaseModel):
+    attribute_description: str = ""
+    entity_description: str = ""
+    search_text: str = ""
+
+
+class AnalyticsDocumentMetadata(BaseModel):
+    group: Optional[str] = None
+    group_normalized: str = ""
+    family: str = ""
+    category: Optional[str] = None
+    source_system: Optional[str] = None
+    data_classification: Optional[str] = None
+    is_pii_column: Optional[str] = None
+    is_sensitive_column: Optional[str] = None
+
+
+class AnalyticsOutputMatch(BaseModel):
+    entityname: str
+    attribute: str
+    layer: str
+    physical_region: Optional[str] = None
+    attribute_description: str = ""
+    entity_description: str = ""
+    score: str = ""
+
+
+class AnalyticsResponse(BaseModel):
+    original_query: str
+    answer: str
+    retrieval_mode: str
+    best_match: Optional[AnalyticsOutputMatch] = None
+    alternate_matches: List[AnalyticsOutputMatch] = Field(default_factory=list)
+    searched_layers: List[str] = Field(default_factory=list)
+    requires_cda_approval: bool = False
+    next_action: Optional[str] = None
+
+
+class AnalyticsLLMSelection(BaseModel):
+    answer: str = ""
+    best_match_doc_id: Optional[str] = None
+    selected_doc_ids: List[str] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+
+
 class ConceptualRequest(BaseModel):
     requirement: str = Field(..., description="Business requirement or use case from the user.")
 

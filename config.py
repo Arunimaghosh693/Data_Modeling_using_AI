@@ -20,3 +20,7 @@ def get_gemini_api_key() -> str | None:
 #editd by mani
 def get_gemini_model() -> str:
     return os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+
+
+def get_analytics_glossary_json_path() -> str | None:
+    return os.getenv("ANALYTICS_GLOSSARY_JSON_PATH")

@@ -15,6 +15,7 @@ try:
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import HTMLResponse, PlainTextResponse
 
+    from analytics_service import search_analytics, warm_analytics_index
     from artifact_store import (
         get_conceptual_artifact,
         get_logical_artifact,
@@ -27,6 +28,8 @@ try:
     )
     from rag import warm_rag
     from schemas import (
+        AnalyticsRequest,
+        AnalyticsResponse,
         ConceptualModel,
         EntityDefinition,
         LogicalModel,
@@ -49,6 +52,7 @@ except ImportError:  # pragma: no cover - supports package-style imports
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import HTMLResponse, PlainTextResponse
 
+    from .analytics_service import search_analytics, warm_analytics_index
     from .artifact_store import (
         get_conceptual_artifact,
         get_logical_artifact,
@@ -61,6 +65,8 @@ except ImportError:  # pragma: no cover - supports package-style imports
     )
     from .rag import warm_rag
     from .schemas import (
+        AnalyticsRequest,
+        AnalyticsResponse,
         ConceptualModel,
         EntityDefinition,
         LogicalModel,
@@ -89,10 +95,17 @@ app = FastAPI(
 )
 
 
+ANALYTICS_TOP_K = 10
+
+
 #editd by mani
 @app.on_event("startup")
 def _warm_rag_on_startup() -> None:
     warm_rag()
+    try:
+        warm_analytics_index()
+    except Exception as exc:
+        logging.warning("Analytics warmup skipped: %s", exc)
 
 
 def _apply_generated_mermaid(conceptual: ConceptualModel) -> ConceptualModel:
@@ -374,6 +387,27 @@ def _build_orchestrator_response(
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/analytics", response_model=AnalyticsResponse)
+def analytics_endpoint(payload: AnalyticsRequest) -> AnalyticsResponse:
+    try:
+        return search_analytics(
+            query=payload.query,
+            user_context=payload.query,
+            top_k=ANALYTICS_TOP_K,
+            approve_cda_fallback=payload.approve_cda_fallback,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.exception("Analytics search failed")
+        raise HTTPException(
+            status_code=502,
+            detail="Analytics retrieval failed. Verify glossary JSON path and Gemini configuration.",
+        ) from exc
 
 
 @app.post("/orchestrate", response_model=OrchestratorResponse)

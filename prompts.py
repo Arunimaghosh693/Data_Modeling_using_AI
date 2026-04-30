@@ -294,3 +294,67 @@ Required output:
   "ddl": ["string"]
 }}
 """.strip()
+
+
+def get_analytics_prompt(
+    query: str,
+    user_context: str,
+    retrieved_candidates: list[dict[str, Any]],
+    layer_scope: str = "",
+    cda_fallback_approved: bool = False,
+) -> str:
+    candidates_json = _compact_json(
+        {
+            "original_query": query,
+            "user_context": user_context,
+            "retrieved_documents": retrieved_candidates,
+        }
+    )
+    context_text = user_context or "No extra user context provided."
+    layer_scope_text = layer_scope or "ANY"
+    cda_approval_text = "approved" if cda_fallback_approved else "not approved"
+
+    return f"""
+You are a banking glossary assistant.
+
+Original query:
+{query}
+
+User context:
+{context_text}
+
+Layer scope:
+{layer_scope_text}
+
+CDA fallback:
+{cda_approval_text}
+
+Retrieved candidates:
+{candidates_json}
+
+Return ONLY valid JSON.
+
+Rules:
+- Use only the retrieved documents. Do not invent entities or attributes.
+- Ignore retrieval order. Judge relevance only from business meaning.
+- Work only inside the current layer scope.
+- If there is no strong match in this layer, return null for best_match_doc_id and an empty selected_doc_ids list.
+- Prefer exact attribute matches first.
+- Prefer candidates whose attribute name and attribute description cover more of the user query concepts.
+- Do not overvalue generic shared words if another candidate captures the more specific concept in the query.
+- For exact attribute availability questions, include all exact matches across entities.
+- For broader questions, choose the smallest useful set of attributes.
+- When several entities contain the same attribute, pick the best_match_doc_id from the clearest business definition and keep only the most useful supporting entities.
+- Multi-line concepts like address may return sibling attributes when they are needed together.
+- Keep selected_doc_ids ordered from best match to weaker match.
+- If CDA fallback is not approved, do not return CDA documents.
+- Keep the answer short, clear, and business-friendly.
+
+Required output:
+{{
+  "answer": "string",
+  "best_match_doc_id": "doc_id or null",
+  "selected_doc_ids": ["doc_id"],
+  "notes": ["string"]
+}}
+""".strip()
